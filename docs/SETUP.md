@@ -12,12 +12,12 @@ Do these once. Menu names in Supabase and Vercel change now and then, so a label
 
 Under **Authentication**:
 
-1. **Sign-ups:** turn off "Allow new users to sign up". Accounts are by invitation only.
-2. **URL configuration:** set **Site URL** to your app address (the Vercel address from step 4, later your own domain). Add `https://YOUR-APP-ADDRESS/auth/confirm` to the redirect URLs.
-3. **Email templates:** replace the link in two templates so emails land on the app:
-   - *Invite user:* `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=invite`
-   - *Magic link:* `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email`
-   - *Reset password:* `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery`
+1. **Sign In / Providers:** turn off "Allow new users to sign up" and save. Accounts are by invitation only.
+2. **URL Configuration:**
+   - **Site URL:** `https://YOUR-APP-ADDRESS/auth/callback` (invite emails land here)
+   - **Redirect URLs:** add `https://YOUR-APP-ADDRESS/auth/confirm` (login-link emails land here)
+
+The email templates stay on Supabase's defaults. They can only be edited after connecting your own email service (custom SMTP), which is a later step.
 
 ## 3. Create your coach login (Supabase)
 

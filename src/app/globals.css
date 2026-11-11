@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+/* Brand colours live here. Change these six values to restyle the whole app. */
+:root {
+  --bg: #0b0d10;
+  --surface: #151920;
+  --surface-2: #1d232c;
+  --border: #2a323d;
+  --text: #f2f4f7;
+  --muted: #98a2b3;
+  --accent: #e5484d;
+  --accent-text: #ffffff;
+  --ok: #30a46c;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-text: var(--accent-text);
+  --color-ok: var(--ok);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-tap-highlight-color: transparent;
+}
+
+input,
+select,
+button {
+  font: inherit;
+}

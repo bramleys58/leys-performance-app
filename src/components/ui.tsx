@@ -1,0 +1,46 @@
+import type { ComponentProps, ReactNode } from "react";
+
+export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return (
+    <div className={`rounded-2xl border border-border bg-surface p-5 ${className}`}>{children}</div>
+  );
+}
+
+export function Field({ label, ...props }: { label: string } & ComponentProps<"input">) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-sm text-muted">{label}</span>
+      <input
+        {...props}
+        className="w-full rounded-xl border border-border bg-surface-2 px-4 py-3 text-base text-text outline-none placeholder:text-muted focus:border-accent"
+      />
+    </label>
+  );
+}
+
+export function PrimaryButton({ children, ...props }: ComponentProps<"button">) {
+  return (
+    <button
+      {...props}
+      className="w-full rounded-xl bg-accent px-4 py-3 text-base font-semibold text-accent-text active:opacity-80 disabled:opacity-50"
+    >
+      {children}
+    </button>
+  );
+}
+
+export function SecondaryButton({ children, ...props }: ComponentProps<"button">) {
+  return (
+    <button
+      {...props}
+      className="w-full rounded-xl border border-border bg-surface-2 px-4 py-3 text-base font-medium text-text active:opacity-80"
+    >
+      {children}
+    </button>
+  );
+}
+
+export function Notice({ kind, children }: { kind: "error" | "ok"; children: ReactNode }) {
+  const tone = kind === "error" ? "border-accent/50 text-accent" : "border-ok/50 text-ok";
+  return <p className={`rounded-xl border bg-surface-2 px-4 py-3 text-sm ${tone}`}>{children}</p>;
+}

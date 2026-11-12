@@ -36,9 +36,3 @@ body {
   font-family: var(--font-sans);
   -webkit-tap-highlight-color: transparent;
 }
-
-input,
-select,
-button {
-  font: inherit;
-}

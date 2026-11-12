@@ -7,7 +7,7 @@ Coaching platform for Leys Performance: programs, set logging, follow-up, testin
 | Path | What |
 | --- | --- |
 | `docs/SETUP.md` | One-time setup of Supabase and Vercel |
-| `supabase/migrations/0001_init.sql` | All database tables and access rules |
+| `supabase/migrations/` | Database tables and access rules, run in number order |
 | `supabase/seed/exercises.sql` | Exercise library import, generated from `data/master_library.xlsx` |
 | `tools/build_exercise_seed.py` | Regenerates the import after the library file changes |
 | `src/app` | Screens: login, home, account, exercise library |
@@ -16,9 +16,20 @@ Coaching platform for Leys Performance: programs, set logging, follow-up, testin
 
 ## Status
 
-Done: project setup, database with access rules, login by password or email link, invitation-only accounts, coach home, exercise library with search and filters, installable to the home screen.
+Done:
+- Project setup, database with access rules, invitation-only logins
+- Coach: home, athletes, program builder (prep circuit, supersets, targets, notes), exercise library, logging for a client
+- Athlete: Today and this week, workout preview, set-by-set logging, finish with session RPE, summary with personal records, history
+- Installable to the home screen
 
-Next: athletes, program builder, athlete Today screen, set logging.
+Next: follow-up overview for the coach, testing days, maxes sheet, My Progress charts.
+
+## Checks
+
+```bash
+npm run lint
+node --experimental-strip-types --no-warnings tools/plan.test.mjs
+```
 
 ## Run locally
 

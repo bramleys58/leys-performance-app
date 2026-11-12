@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { BackLink, Card, Field, Notice, PrimaryButton, SecondaryButton, Select, inputClass } from "@/components/ui";
+import { BackLink, Card, Field, Notice, SecondaryButton, Select, inputClass } from "@/components/ui";
 import { requireCoach } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { copyProgram, createProgram, updateAthlete } from "../../coach-actions";
@@ -18,12 +18,54 @@ export default async function AthletePage({ params, searchParams }: PageProps<"/
   ]);
   if (!athlete) notFound();
 
+  const activeIds = (programs ?? []).filter((p) => p.status === "active").map((p) => p.id);
+  const [{ data: liveSessions }, { data: recentLogs }] = await Promise.all([
+    activeIds.length
+      ? supabase.from("sessions").select("id, name, kind, weekday").in("program_id", activeIds).neq("kind", "slot").order("weekday", { nullsFirst: false }).order("position")
+      : Promise.resolve({ data: [] as { id: string; name: string; kind: string; weekday: number | null }[] }),
+    supabase.from("workout_logs").select("id, session_name, performed_on, finished_at, session_rpe").eq("athlete_id", id).order("performed_on", { ascending: false }).limit(8),
+  ]);
+
   return (
     <div className="space-y-5">
       <BackLink href="/athletes">Athletes</BackLink>
       <h1 className="text-2xl font-bold">{athlete.full_name}</h1>
       {sp.saved && <Notice kind="ok">Saved.</Notice>}
       {typeof sp.error === "string" && <Notice kind="error">{sp.error}</Notice>}
+
+      {(liveSessions ?? []).length > 0 && (
+        <Card>
+          <h2 className="font-semibold">Log a session for {athlete.full_name.split(" ")[0]}</h2>
+          <p className="mt-1 text-sm text-muted">Opens the same logging screen the athlete uses, with you entering the numbers.</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {(liveSessions ?? []).map((s) => (
+              <Link key={s.id} href={`/session/${s.id}?athlete=${athlete.id}`} className="rounded-xl border border-border bg-surface-2 px-4 py-2.5 text-sm font-medium">
+                {s.name}
+              </Link>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      <Card>
+        <h2 className="font-semibold">Recent workouts</h2>
+        {(recentLogs ?? []).length === 0 && <p className="mt-2 text-sm text-muted">Nothing logged yet.</p>}
+        <ul className="mt-2 divide-y divide-border">
+          {(recentLogs ?? []).map((l) => (
+            <li key={l.id}>
+              <Link href={`/workout/${l.id}`} className="flex items-center justify-between py-2.5 text-sm">
+                <span>
+                  <span className="font-medium">{l.session_name ?? "Workout"}</span>
+                  <span className="ml-2 text-muted">{l.performed_on}</span>
+                </span>
+                <span className={l.finished_at ? "text-ok" : "text-muted"}>
+                  {l.finished_at ? `done${l.session_rpe ? ` · RPE ${l.session_rpe}` : ""}` : "in progress"}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </Card>
 
       <Card>
         <h2 className="font-semibold">Programs</h2>

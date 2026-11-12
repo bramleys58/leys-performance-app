@@ -8,6 +8,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
       ? [
           { href: "/", label: "Home" },
           { href: "/athletes", label: "Athletes" },
+          { href: "/follow-up", label: "Follow-up" },
           { href: "/library", label: "Library" },
           { href: "/account", label: "Account" },
         ]
@@ -23,7 +24,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
           <Link href="/" className="text-xs font-semibold tracking-[0.25em] text-accent">
             LEYS PERFORMANCE
           </Link>
-          <nav className="flex gap-4 text-sm">
+          <nav className="flex flex-wrap justify-end gap-x-4 gap-y-1 text-sm">
             {links.map((l) => (
               <Link key={l.href} href={l.href} className="text-muted hover:text-text">
                 {l.label}

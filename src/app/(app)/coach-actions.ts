@@ -333,3 +333,37 @@ export async function rowOp(op: "up" | "down" | "delete", id: string, fd: FormDa
   }
   go(back);
 }
+
+// -------------------------------------------------------------------- maxes
+
+const KG_PER_LB = 0.45359237;
+
+/** Sets the working max for one lift. The previous one is kept as history. */
+export async function setMax(fd: FormData) {
+  const db = await coachDb();
+  const athleteId = String(fd.get("athlete_id"));
+  const back = `/athletes/${athleteId}/maxes`;
+  const exerciseId = text(fd, "exercise_id");
+  const value = num(fd, "value");
+  if (!exerciseId) go(back + "?error=" + encodeURIComponent("Pick the exercise from the list, so the max is linked to the library."));
+  if (value == null || value <= 0) go(back + "?error=" + encodeURIComponent("Fill in a weight above zero."));
+
+  const kg = text(fd, "unit") === "lbs" ? value * KG_PER_LB : value;
+  await db.from("maxes").update({ is_active: false }).eq("athlete_id", athleteId).eq("exercise_id", exerciseId).eq("is_active", true);
+  const { error } = await db.from("maxes").insert({
+    athlete_id: athleteId,
+    exercise_id: exerciseId,
+    value: Math.round(kg * 100) / 100,
+    source: text(fd, "source") === "estimated" ? "estimated" : "tested",
+    set_on: text(fd, "set_on") ?? new Date().toISOString().slice(0, 10),
+  });
+  await db.from("exercises").update({ counts_for_maxes: true }).eq("id", exerciseId);
+  go(back + (error ? "?error=" + encodeURIComponent("Could not save the max.") : "?saved=1"));
+}
+
+export async function removeMax(id: string, fd: FormData) {
+  const db = await coachDb();
+  const athleteId = String(fd.get("athlete_id"));
+  await db.from("maxes").update({ is_active: false }).eq("id", id);
+  go(`/athletes/${athleteId}/maxes`);
+}

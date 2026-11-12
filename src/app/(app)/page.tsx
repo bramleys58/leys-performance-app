@@ -59,13 +59,13 @@ async function CoachHome({ firstName }: { firstName: string }) {
           );
         })}
       </div>
-      <Card>
-        <h2 className="font-semibold">Coming next</h2>
-        <p className="mt-2 text-sm text-muted">
-          Athletes, the program builder and follow-up are the next build steps. The exercise library is
-          ready to browse.
-        </p>
-      </Card>
+      <Link href="/follow-up" className="flex items-center justify-between rounded-2xl border border-border bg-surface px-5 py-4">
+        <span>
+          <span className="block font-semibold">Follow-up</span>
+          <span className="block text-sm text-muted">Who trained this week, what was missed, comments</span>
+        </span>
+        <span className="text-muted">→</span>
+      </Link>
     </div>
   );
 }

@@ -47,6 +47,14 @@ export default async function AthletePage({ params, searchParams }: PageProps<"/
         </Card>
       )}
 
+      <Link href={`/athletes/${athlete.id}/maxes`} className="flex items-center justify-between rounded-2xl border border-border bg-surface px-5 py-4">
+        <span>
+          <span className="block font-semibold">Maxes</span>
+          <span className="block text-sm text-muted">Working maxes for percent-based weights</span>
+        </span>
+        <span className="text-muted">→</span>
+      </Link>
+
       <Card>
         <h2 className="font-semibold">Recent workouts</h2>
         {(recentLogs ?? []).length === 0 && <p className="mt-2 text-sm text-muted">Nothing logged yet.</p>}

@@ -38,20 +38,21 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
 
   const [{ data: lastData }, { data: maxData }] = await Promise.all([
     exerciseIds.length
-      ? supabase.rpc("last_sets", { p_athlete: athlete.id, p_exercises: exerciseIds })
+      ? supabase.rpc("previous_sets", { p_athlete: athlete.id, p_exercises: exerciseIds, p_before: log.performed_on })
       : Promise.resolve({ data: [] }),
     exerciseIds.length
       ? supabase.from("maxes").select("exercise_id, value").eq("athlete_id", athlete.id).eq("is_active", true).in("exercise_id", exerciseIds)
       : Promise.resolve({ data: [] }),
   ]);
 
-  type Last = { exercise_id: string; weight: number | null; reps: number | null; seconds: number | null; distance: number | null; performed_on: string };
-  const lastBy = new Map(((lastData ?? []) as Last[]).map((l) => [l.exercise_id, l]));
+  type Prev = { exercise_id: string; set_number: number; weight: number | null; reps: number | null; seconds: number | null; distance: number | null; performed_on: string };
+  const prevBy = new Map<string, Prev[]>();
+  for (const p of (lastData ?? []) as Prev[]) prevBy.set(p.exercise_id, [...(prevBy.get(p.exercise_id) ?? []), p]);
   const maxBy = new Map(((maxData ?? []) as { exercise_id: string; value: number }[]).map((m) => [m.exercise_id, Number(m.value)]));
 
   const loggerRows: LoggerRow[] = rows.map((r) => {
     const step = Number(r.exercises?.weight_step ?? 2.5);
-    const last = r.exercise_id ? lastBy.get(r.exercise_id) : undefined;
+    const previous = (r.exercise_id ? prevBy.get(r.exercise_id) : undefined) ?? [];
     const max = r.exercise_id ? maxBy.get(r.exercise_id) : undefined;
     let plannedKg: number | null = null;
     if (r.target_type === "weight" && r.target_value != null) {
@@ -59,8 +60,6 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
       plannedKg = athlete.unit === "lbs" ? Number(r.target_value) * KG_PER_LB : Number(r.target_value);
     } else if (r.target_type === "percent" && r.target_value != null && max) {
       plannedKg = roundToStep((max * Number(r.target_value)) / 100, step);
-    } else if (last?.weight != null && log.performed_on !== last.performed_on) {
-      plannedKg = Number(last.weight);
     }
     return {
       id: r.id,
@@ -80,9 +79,13 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
       tracking: r.exercises?.tracking_type ?? "load",
       weightStep: step,
       plannedKg,
-      last: last && log.performed_on !== last.performed_on
-        ? { weight: last.weight == null ? null : Number(last.weight), reps: last.reps, seconds: last.seconds == null ? null : Number(last.seconds), distance: last.distance == null ? null : Number(last.distance), on: last.performed_on }
-        : null,
+      previous: previous.map((p) => ({
+        setNumber: p.set_number,
+        weight: p.weight == null ? null : Number(p.weight),
+        reps: p.reps,
+        seconds: p.seconds == null ? null : Number(p.seconds),
+        distance: p.distance == null ? null : Number(p.distance),
+      })),
     };
   });
 

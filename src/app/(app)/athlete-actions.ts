@@ -132,3 +132,16 @@ export async function reopenWorkout(fd: FormData) {
   revalidatePath(`/workout/${logId}`);
   redirect(`/workout/${logId}`);
 }
+
+/** Removes one logged set (un-ticking it on the logging screen). */
+export async function deleteSet(workoutLogId: string, sessionExerciseId: string, setNumber: number): Promise<{ ok: boolean }> {
+  await requireUser();
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("set_logs")
+    .delete()
+    .eq("workout_log_id", workoutLogId)
+    .eq("session_exercise_id", sessionExerciseId)
+    .eq("set_number", setNumber);
+  return { ok: !error };
+}

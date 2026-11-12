@@ -28,7 +28,7 @@ async function CoachHome({ firstName }: { firstName: string }) {
   ]);
 
   const tiles = [
-    { label: "Active athletes", value: athletes.count ?? 0 },
+    { label: "Active athletes", value: athletes.count ?? 0, href: "/athletes" },
     { label: "Active programs", value: programs.count ?? 0 },
     { label: "Exercises", value: exercises.count ?? 0, href: "/library" },
     { label: "Exercises to review", value: review.count ?? 0, href: "/library?review=1" },

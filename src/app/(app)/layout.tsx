@@ -7,6 +7,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
     user.role === "coach"
       ? [
           { href: "/", label: "Home" },
+          { href: "/athletes", label: "Athletes" },
           { href: "/library", label: "Library" },
           { href: "/account", label: "Account" },
         ]

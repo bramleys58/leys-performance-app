@@ -432,3 +432,84 @@ export async function archiveExercise(id: string, archived: boolean) {
   await db.from("exercises").update({ archived, needs_review: false, approved: true }).eq("id", id);
   go(archived ? "/library?archived=1" : `/library/${id}`);
 }
+
+// ------------------------------------------------------------------ testing
+
+const ids = (fd: FormData, key: string) => fd.getAll(key).map(String).filter(Boolean);
+
+export async function createTestEvent(fd: FormData) {
+  const db = await coachDb();
+  const testIds = ids(fd, "test_ids");
+  const athleteIds = ids(fd, "athlete_ids");
+  if (testIds.length === 0 || athleteIds.length === 0) {
+    go("/testing?error=" + encodeURIComponent("Pick at least one test and one athlete."));
+  }
+  const { data, error } = await db
+    .from("test_events")
+    .insert({
+      name: text(fd, "name") ?? "Test day",
+      held_on: text(fd, "held_on") ?? new Date().toISOString().slice(0, 10),
+      test_ids: testIds,
+      athlete_ids: athleteIds,
+    })
+    .select("id")
+    .single();
+  if (error || !data) go("/testing?error=" + encodeURIComponent("Could not create the test day."));
+  go(`/testing/${data.id}`);
+}
+
+export async function updateTestEvent(fd: FormData) {
+  const db = await coachDb();
+  const id = String(fd.get("id"));
+  await db
+    .from("test_events")
+    .update({
+      name: text(fd, "name") ?? "Test day",
+      held_on: text(fd, "held_on") ?? undefined,
+      notes: text(fd, "notes"),
+      test_ids: ids(fd, "test_ids"),
+      athlete_ids: ids(fd, "athlete_ids"),
+    })
+    .eq("id", id);
+  go(`/testing/${id}?saved=1`);
+}
+
+export async function deleteTestEvent(id: string) {
+  const db = await coachDb();
+  await db.from("test_events").delete().eq("id", id);
+  go("/testing");
+}
+
+/** Saves one attempt. An empty value removes the attempt. */
+export async function saveAttempt(eventId: string, athleteId: string, testId: string, attempt: number, value: number | null): Promise<{ ok: boolean }> {
+  const db = await coachDb();
+  if (value == null) {
+    const { error } = await db.from("test_results").delete().match({ test_event_id: eventId, athlete_id: athleteId, test_id: testId, attempt });
+    return { ok: !error };
+  }
+  const { error } = await db
+    .from("test_results")
+    .upsert(
+      { test_event_id: eventId, athlete_id: athleteId, test_id: testId, attempt, value, recorded_at: new Date().toISOString() },
+      { onConflict: "test_event_id,athlete_id,test_id,attempt" },
+    );
+  revalidatePath(`/testing/${eventId}`);
+  return { ok: !error };
+}
+
+export async function createTest(fd: FormData) {
+  const db = await coachDb();
+  const name = text(fd, "name");
+  const unit = text(fd, "unit");
+  if (!name || !unit) go("/testing/tests?error=" + encodeURIComponent("A name and a unit are required."));
+  const { count } = await db.from("tests").select("id", { count: "exact", head: true });
+  const { error } = await db.from("tests").insert({
+    name,
+    unit,
+    category: text(fd, "category"),
+    higher_is_better: text(fd, "direction") !== "lower",
+    decimals: Math.min(3, Math.max(0, int(fd, "decimals") ?? 2)),
+    position: 100 + (count ?? 0),
+  });
+  go("/testing/tests" + (error ? "?error=" + encodeURIComponent(error.code === "23505" ? "A test with that name exists already." : "Could not add the test.") : "?saved=1"));
+}

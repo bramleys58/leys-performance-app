@@ -52,13 +52,16 @@ export default async function AthletePage({ params, searchParams }: PageProps<"/
         </div>
       </Card>
 
-      <Link href={`/athletes/${athlete.id}/maxes`} className="flex items-center justify-between rounded-2xl border border-border bg-surface px-5 py-4">
-        <span>
+      <div className="grid grid-cols-2 gap-3">
+        <Link href={`/athletes/${athlete.id}/progress`} className="rounded-2xl border border-border bg-surface px-4 py-4">
+          <span className="block font-semibold">Progress</span>
+          <span className="block text-sm text-muted">Volume, records, tests</span>
+        </Link>
+        <Link href={`/athletes/${athlete.id}/maxes`} className="rounded-2xl border border-border bg-surface px-4 py-4">
           <span className="block font-semibold">Maxes</span>
-          <span className="block text-sm text-muted">Working maxes for percent-based weights</span>
-        </span>
-        <span className="text-muted">→</span>
-      </Link>
+          <span className="block text-sm text-muted">For % based weights</span>
+        </Link>
+      </div>
 
       <Card>
         <h2 className="font-semibold">Recent workouts</h2>

@@ -133,9 +133,14 @@ export async function AthleteHome({ firstName }: { firstName: string }) {
         </>
       )}
 
-      <Link href="/history" className="block text-center text-sm text-muted underline">
-        Workout history
-      </Link>
+      <div className="flex justify-center gap-6 text-sm text-muted">
+        <Link href="/progress" className="underline">
+          My progress
+        </Link>
+        <Link href="/history" className="underline">
+          Workout history
+        </Link>
+      </div>
     </div>
   );
 }

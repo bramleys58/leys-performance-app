@@ -15,6 +15,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
               { href: "/", label: "Home", icon: "🏠" },
               { href: "/athletes", label: "Athletes", icon: "👥" },
               { href: "/follow-up", label: "Follow-up", icon: "📋" },
+              { href: "/testing", label: "Testing", icon: "⏱️" },
             ],
           },
           { title: "Programming", links: [{ href: "/library", label: "Exercise library", icon: "📚" }] },
@@ -24,6 +25,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
                   title: "My training",
                   links: [
                     { href: "/me", label: "Today", icon: "💪" },
+                    { href: "/progress", label: "My progress", icon: "📈" },
                     { href: "/history", label: "Workout history", icon: "🕘" },
                   ],
                 },
@@ -36,6 +38,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
             title: "Training",
             links: [
               { href: "/", label: "Today", icon: "💪" },
+              { href: "/progress", label: "My progress", icon: "📈" },
               { href: "/history", label: "Workout history", icon: "🕘" },
             ],
           },

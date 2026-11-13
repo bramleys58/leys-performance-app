@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 
 export type AthleteRow = {
@@ -8,7 +9,7 @@ export type AthleteRow = {
 };
 
 /** The athlete profile linked to the logged-in user, or null. */
-export async function getMyAthlete(): Promise<AthleteRow | null> {
+export const getMyAthlete = cache(async function getMyAthlete(): Promise<AthleteRow | null> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -20,4 +21,4 @@ export async function getMyAthlete(): Promise<AthleteRow | null> {
     .eq("user_id", user.id)
     .maybeSingle();
   return (data as AthleteRow | null) ?? null;
-}
+});

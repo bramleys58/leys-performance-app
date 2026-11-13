@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Card } from "@/components/ui";
+import { ActionButton, Card } from "@/components/ui";
 import { requireCoach } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 
@@ -94,7 +94,7 @@ export default async function LibraryPage({ searchParams }: PageProps<"/library"
             </option>
           ))}
         </select>
-        <button className="rounded-xl bg-accent px-5 py-3 font-semibold text-accent-text">Search</button>
+        <ActionButton className="rounded-xl bg-accent px-5 py-3 font-semibold text-accent-text">Search</ActionButton>
         <div className="flex gap-5 text-sm text-muted sm:col-span-3">
           <label className="flex items-center gap-2">
             <input type="checkbox" name="review" value="1" defaultChecked={review} /> Needs review

@@ -7,8 +7,9 @@ import { createClient } from "@/lib/supabase/server";
 export const metadata = { title: "History | Leys Performance" };
 
 export default async function HistoryPage() {
-  await requireUser();
+  const user = await requireUser();
   const athlete = await getMyAthlete();
+  const home = user.role === "coach" ? "/me" : "/";
   const supabase = await createClient();
   const { data: logs } = athlete
     ? await supabase
@@ -23,7 +24,7 @@ export default async function HistoryPage() {
 
   return (
     <div className="space-y-5">
-      <BackLink href="/">Today</BackLink>
+      <BackLink href={home}>Today</BackLink>
       <h1 className="text-2xl font-bold">Workout history</h1>
       {(logs ?? []).length === 0 ? (
         <Card>

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { BackLink, Card, Field, Notice, SecondaryButton, Select, inputClass } from "@/components/ui";
+import { ActionButton, BackLink, Card, Field, Notice, SecondaryButton, Select, inputClass } from "@/components/ui";
 import { requireCoach } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { copyProgram, createProgram, updateAthlete } from "../../coach-actions";
@@ -96,7 +96,7 @@ export default async function AthletePage({ params, searchParams }: PageProps<"/
           <input type="hidden" name="athlete_id" value={athlete.id} />
           <input name="name" placeholder="New block name" required className={inputClass} />
           <input name="phase" placeholder="Phase (optional)" className={inputClass} />
-          <button className="rounded-xl bg-accent px-5 py-2.5 font-semibold text-accent-text">New program</button>
+          <ActionButton className="rounded-xl bg-accent px-5 py-2.5 font-semibold text-accent-text">New program</ActionButton>
         </form>
 
         {(others ?? []).length > 0 && (
@@ -116,7 +116,7 @@ export default async function AthletePage({ params, searchParams }: PageProps<"/
                 );
               })}
             </select>
-            <button className="rounded-xl border border-border bg-surface-2 px-5 py-2.5 font-medium">Copy</button>
+            <ActionButton className="rounded-xl border border-border bg-surface-2 px-5 py-2.5 font-medium">Copy</ActionButton>
           </form>
         )}
       </Card>

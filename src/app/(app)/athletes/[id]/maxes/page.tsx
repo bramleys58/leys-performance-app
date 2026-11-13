@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { ExercisePicker } from "@/components/exercise-picker";
-import { BackLink, Card, Notice, SecondaryButton, inputClass } from "@/components/ui";
+import { ActionButton, BackLink, Card, Notice, SecondaryButton, inputClass } from "@/components/ui";
 import { requireCoach } from "@/lib/auth";
 import { epley, todayISO } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/server";
@@ -78,7 +78,7 @@ export default async function MaxesPage({ params, searchParams }: PageProps<"/at
               </p>
               <form action={removeMax.bind(null, m.id)}>
                 <input type="hidden" name="athlete_id" value={id} />
-                <button aria-label="Remove max" className="rounded-lg border border-border px-2.5 py-2 text-sm text-muted">✕</button>
+                <ActionButton aria-label="Remove max" className="rounded-lg border border-border px-2.5 py-2 text-sm text-muted">✕</ActionButton>
               </form>
             </li>
           ))}
@@ -122,7 +122,7 @@ export default async function MaxesPage({ params, searchParams }: PageProps<"/at
                     <input type="hidden" name="value" value={Math.round(b.e1rm * 100) / 100} />
                     <input type="hidden" name="unit" value="kg" />
                     <input type="hidden" name="source" value="estimated" />
-                    <button className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm">Use</button>
+                    <ActionButton className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm">Use</ActionButton>
                   </form>
                 </li>
               );

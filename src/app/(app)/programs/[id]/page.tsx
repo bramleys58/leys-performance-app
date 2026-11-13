@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { BackLink, Card, Field, Notice, SecondaryButton, Select, inputClass } from "@/components/ui";
+import { ActionButton, BackLink, Card, Field, Notice, SecondaryButton, Select, inputClass } from "@/components/ui";
 import { requireCoach } from "@/lib/auth";
 import { WEEKDAYS } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/server";
@@ -79,7 +79,7 @@ export default async function ProgramPage({ params, searchParams }: PageProps<"/
             <label className="flex items-center gap-2 text-sm text-muted">
               <input type="checkbox" name="is_optional" /> Optional session
             </label>
-            <button className="rounded-xl bg-accent px-5 py-2.5 font-semibold text-accent-text">Add session</button>
+            <ActionButton className="rounded-xl bg-accent px-5 py-2.5 font-semibold text-accent-text">Add session</ActionButton>
           </div>
         </form>
       </Card>

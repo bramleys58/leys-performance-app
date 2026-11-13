@@ -16,11 +16,13 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
 
   const { data: log } = await supabase
     .from("workout_logs")
-    .select("*, athletes(id, full_name, unit)")
+    .select("*, athletes(id, full_name, unit, user_id)")
     .eq("id", logId)
     .maybeSingle();
   if (!log) notFound();
-  const athlete = log.athletes as unknown as { id: string; full_name: string; unit: "kg" | "lbs" };
+  const athlete = log.athletes as unknown as { id: string; full_name: string; unit: "kg" | "lbs"; user_id: string | null };
+  // A coach logging their own training sees it like an athlete would.
+  const forClient = user.role === "coach" && athlete.user_id !== user.id;
 
   const [{ data: rowData }, { data: setData }] = await Promise.all([
     log.session_id
@@ -104,7 +106,7 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
       skipped: s.skipped,
     }));
 
-  const backHref = user.role === "coach" ? `/athletes/${athlete.id}` : "/";
+  const backHref = forClient ? `/athletes/${athlete.id}` : user.role === "coach" ? "/me" : "/";
 
   // ----------------------------------------------------------- summary view
   if (log.finished_at) {
@@ -156,7 +158,7 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
         <div>
           <p className="text-sm text-ok">Workout done</p>
           <h1 className="mt-1 text-2xl font-bold">{log.session_name ?? "Workout"}</h1>
-          {user.role === "coach" && <p className="mt-1 text-sm text-muted">{athlete.full_name}</p>}
+          {forClient && <p className="mt-1 text-sm text-muted">{athlete.full_name}</p>}
         </div>
         <div className="grid grid-cols-2 gap-3">
           {tiles.map((t) => (
@@ -205,7 +207,7 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
       athleteId={athlete.id}
       unit={athlete.unit}
       sessionName={log.session_name ?? "Workout"}
-      athleteName={user.role === "coach" ? athlete.full_name : null}
+      athleteName={forClient ? athlete.full_name : null}
       startedAt={log.started_at}
       rows={loggerRows}
       initialLogged={logged}

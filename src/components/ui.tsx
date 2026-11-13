@@ -1,5 +1,7 @@
 import type { ComponentProps, ReactNode } from "react";
 
+export { ActionButton, PrimaryButton, SecondaryButton } from "./buttons";
+
 export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
     <div className={`rounded-2xl border border-border bg-surface p-5 ${className}`}>{children}</div>
@@ -15,28 +17,6 @@ export function Field({ label, ...props }: { label: string } & ComponentProps<"i
         className="w-full rounded-xl border border-border bg-surface-2 px-4 py-3 text-base text-text outline-none placeholder:text-muted focus:border-accent"
       />
     </label>
-  );
-}
-
-export function PrimaryButton({ children, ...props }: ComponentProps<"button">) {
-  return (
-    <button
-      {...props}
-      className="w-full rounded-xl bg-accent px-4 py-3 text-base font-semibold text-accent-text active:opacity-80 disabled:opacity-50"
-    >
-      {children}
-    </button>
-  );
-}
-
-export function SecondaryButton({ children, ...props }: ComponentProps<"button">) {
-  return (
-    <button
-      {...props}
-      className="w-full rounded-xl border border-border bg-surface-2 px-4 py-3 text-base font-medium text-text active:opacity-80"
-    >
-      {children}
-    </button>
   );
 }
 

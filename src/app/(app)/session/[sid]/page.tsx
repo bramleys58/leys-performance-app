@@ -25,6 +25,9 @@ export default async function SessionPreviewPage({ params, searchParams }: PageP
   const equipment = [...new Set(rows.flatMap((r) => (r.exercises?.equipment ?? "").split("+").map((e) => e.trim())).filter((e) => e && e !== "Bodyweight"))];
   const program = session.programs as unknown as { name: string; athlete_id: string } | null;
   const athleteId = forAthlete ?? (user.role === "coach" ? program?.athlete_id ?? null : null);
+  const { data: owner } = athleteId ? await supabase.from("athletes").select("user_id").eq("id", athleteId).maybeSingle() : { data: null };
+  const own = user.role === "coach" && owner?.user_id === user.id;
+  const backHref = own ? "/me" : user.role === "coach" && athleteId ? `/athletes/${athleteId}` : "/";
 
   const list = (key: "prep" | "workout", title: string) => {
     const items = rows.filter((r) => r.section === key);
@@ -68,7 +71,7 @@ export default async function SessionPreviewPage({ params, searchParams }: PageP
 
   return (
     <div className="space-y-5">
-      <BackLink href={user.role === "coach" && athleteId ? `/athletes/${athleteId}` : "/"}>Back</BackLink>
+      <BackLink href={backHref}>Back</BackLink>
       <div>
         <h1 className="text-2xl font-bold">{session.name}</h1>
         <p className="mt-1 text-sm text-muted">

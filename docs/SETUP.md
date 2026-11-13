@@ -6,7 +6,7 @@ Do these once. Menu names in Supabase and Vercel change now and then, so a label
 
 1. Open your project in Supabase and go to **SQL Editor**.
 2. Open `supabase/migrations/0001_init.sql` from this repository, copy everything, paste it in the editor and press **Run**. It should finish with "Success".
-3. Do the same with every other file in `supabase/migrations/`, in number order (`0002_...`, and any later ones).
+3. Do the same with every other file in `supabase/migrations/`, in number order (`0002_...`, `0003_...`, `0004_...` and any later ones).
 4. Do the same with `supabase/seed/exercises.sql`. This loads the exercise library (810 exercises). It is safe to run twice.
 
 ## 2. Lock down logins (Supabase)

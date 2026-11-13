@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
@@ -11,7 +12,7 @@ export type CurrentUser = {
 };
 
 /** The logged-in user with their role, or a redirect to the login page. */
-export async function requireUser(): Promise<CurrentUser> {
+export const requireUser = cache(async function requireUser(): Promise<CurrentUser> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -30,7 +31,7 @@ export async function requireUser(): Promise<CurrentUser> {
     role: profile?.role === "coach" ? "coach" : "athlete",
     fullName: profile?.full_name ?? "",
   };
-}
+});
 
 /** Same as requireUser, but sends athletes back to their home screen. */
 export async function requireCoach(): Promise<CurrentUser> {

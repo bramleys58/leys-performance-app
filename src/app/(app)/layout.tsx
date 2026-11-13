@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
+import { getMyAthlete } from "@/lib/athlete";
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const user = await requireUser();
+  const ownAthlete = user.role === "coach" ? await getMyAthlete() : null;
   const links =
     user.role === "coach"
       ? [
@@ -10,6 +12,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
           { href: "/athletes", label: "Athletes" },
           { href: "/follow-up", label: "Follow-up" },
           { href: "/library", label: "Library" },
+          ...(ownAthlete ? [{ href: "/me", label: "My training" }] : []),
           { href: "/account", label: "Account" },
         ]
       : [

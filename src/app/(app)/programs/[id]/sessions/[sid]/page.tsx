@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { ExercisePicker } from "@/components/exercise-picker";
-import { BackLink, Card, Field, Notice, PrimaryButton, SecondaryButton, Select, inputClass } from "@/components/ui";
+import { ActionButton, BackLink, Card, Field, Notice, PrimaryButton, SecondaryButton, Select, inputClass } from "@/components/ui";
 import { requireCoach } from "@/lib/auth";
 import { SUPERSET_COLORS, WEEKDAYS, sortRows, supersetLabels, type PlanRow } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/server";
@@ -44,9 +44,9 @@ export default async function SessionEditorPage({ params, searchParams }: PagePr
                   {labels[r.id] ?? i + 1}
                 </span>
                 <input name={`display_name__${r.id}`} defaultValue={r.display_name} aria-label="Exercise name" className={small + " font-medium"} />
-                <button formAction={rowOp.bind(null, "up", r.id)} aria-label="Move up" className="rounded-lg border border-border px-2.5 py-2 text-sm">↑</button>
-                <button formAction={rowOp.bind(null, "down", r.id)} aria-label="Move down" className="rounded-lg border border-border px-2.5 py-2 text-sm">↓</button>
-                <button formAction={rowOp.bind(null, "delete", r.id)} aria-label="Remove exercise" className="rounded-lg border border-border px-2.5 py-2 text-sm text-accent">✕</button>
+                <ActionButton formAction={rowOp.bind(null, "up", r.id)} aria-label="Move up" className="rounded-lg border border-border px-2.5 py-2 text-sm">↑</ActionButton>
+                <ActionButton formAction={rowOp.bind(null, "down", r.id)} aria-label="Move down" className="rounded-lg border border-border px-2.5 py-2 text-sm">↓</ActionButton>
+                <ActionButton formAction={rowOp.bind(null, "delete", r.id)} aria-label="Remove exercise" className="rounded-lg border border-border px-2.5 py-2 text-sm text-accent">✕</ActionButton>
               </div>
               <div className="mt-2 grid grid-cols-4 gap-2">
                 <label className="text-xs text-muted">
@@ -133,17 +133,12 @@ export default async function SessionEditorPage({ params, searchParams }: PagePr
       ) : (
         <>
           {/* The key remounts the form whenever saved data changes, so inputs never show stale values. */}
-          <form key={rowsKey} action={saveRows} className="space-y-5">
+          <form id="rows" key={rowsKey} action={saveRows.bind(null, "stay")} className="space-y-5">
             <input type="hidden" name="session_id" value={sid} />
             <input type="hidden" name="program_id" value={programId} />
             <input type="hidden" name="row_ids" value={rows.map((r) => r.id).join(",")} />
             {section("prep", "PREP CIRCUIT")}
             {section("workout", session.kind === "routine" ? "ROUTINE" : "WORKOUT")}
-            {rows.length > 0 && (
-              <div className="sticky bottom-3 z-10">
-                <PrimaryButton type="submit">Save changes</PrimaryButton>
-              </div>
-            )}
           </form>
           {addForm("prep", "Add to prep circuit")}
           {addForm("workout", session.kind === "routine" ? "Add to routine" : "Add to workout")}
@@ -189,9 +184,27 @@ export default async function SessionEditorPage({ params, searchParams }: PagePr
           <label className="flex items-center gap-2 text-sm text-muted">
             <input type="checkbox" name="confirm" required /> Yes, delete this session and its exercises
           </label>
-          <button className="w-full rounded-xl border border-border px-4 py-3 text-sm text-accent">Delete this session</button>
+          <ActionButton className="w-full rounded-xl border border-border px-4 py-3 text-sm text-accent">Delete this session</ActionButton>
         </form>
       </Card>
+
+      {/* Always in reach at the bottom of the screen. Saves the rows above and returns to the program. */}
+      <div className="sticky bottom-3 z-10 grid grid-cols-[1fr_auto] gap-2">
+        {isSlot || rows.length === 0 ? (
+          <a href={`/programs/${programId}`} className="col-span-2 rounded-xl bg-accent px-4 py-3 text-center text-base font-semibold text-accent-text">
+            Back to program
+          </a>
+        ) : (
+          <>
+            <PrimaryButton form="rows" formAction={saveRows.bind(null, "back")} pendingLabel="Saving…" className="shadow-lg shadow-black/40">
+              Save session
+            </PrimaryButton>
+            <SecondaryButton form="rows" formAction={saveRows.bind(null, "stay")} pendingLabel="Saving…" className="!w-auto shadow-lg shadow-black/40">
+              Save
+            </SecondaryButton>
+          </>
+        )}
+      </div>
     </div>
   );
 }

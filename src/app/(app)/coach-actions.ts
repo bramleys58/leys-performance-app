@@ -293,12 +293,14 @@ async function persistRows(db: Db, fd: FormData, sessionId: string) {
   );
 }
 
-export async function saveRows(fd: FormData) {
+/** Saves the session's rows. "back" returns to the program, "stay" keeps the editor open. */
+export async function saveRows(then: "back" | "stay", fd: FormData) {
   const db = await coachDb();
   const sessionId = String(fd.get("session_id"));
   const programId = String(fd.get("program_id"));
   await persistRows(db, fd, sessionId);
-  go(`/programs/${programId}/sessions/${sessionId}?saved=1`);
+  revalidatePath(`/programs/${programId}/sessions/${sessionId}`);
+  go(then === "back" ? `/programs/${programId}?saved=1` : `/programs/${programId}/sessions/${sessionId}?saved=1`);
 }
 
 export async function rowOp(op: "up" | "down" | "delete", id: string, fd: FormData) {

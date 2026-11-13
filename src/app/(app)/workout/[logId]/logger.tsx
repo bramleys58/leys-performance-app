@@ -1,42 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { SUPERSET_COLORS, firstNumber, looksLikeTime, supersetLabels, type TrackingType } from "@/lib/plan";
-import { deleteSet, finishWorkout, saveSet, type SetInput } from "../../athlete-actions";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { LoggedSet, LoggerRow } from "@/lib/logger-types";
+import { SUPERSET_COLORS, firstNumber, looksLikeTime, supersetLabels } from "@/lib/plan";
+import { createClient } from "@/lib/supabase/client";
+import { addWorkoutExercise, deleteSet, discardWorkout, finishWorkout, removeWorkoutExercise, saveSet, type SetInput } from "../../athlete-actions";
 
 const KG_PER_LB = 0.45359237;
 
-export type LoggerRow = {
-  id: string;
-  exerciseId: string | null;
-  name: string;
-  section: "prep" | "workout";
-  supersetGroup: string | null;
-  position: number;
-  sets: number;
-  reps: string | null;
-  tempo: string | null;
-  targetType: "none" | "weight" | "percent" | "rpe";
-  targetValue: number | null;
-  askRpe: boolean;
-  note: string | null;
-  videoUrl: string | null;
-  tracking: TrackingType;
-  weightStep: number;
-  plannedKg: number | null;
-  previous: { setNumber: number; weight: number | null; reps: number | null; seconds: number | null; distance: number | null }[];
-};
-
-export type LoggedSet = {
-  rowId: string;
-  setNumber: number;
-  weight: number | null; // kg
-  reps: number | null;
-  seconds: number | null;
-  distance: number | null;
-  rpe: number | null;
-  skipped: boolean;
-};
+export type { LoggedSet, LoggerRow } from "@/lib/logger-types";
 
 type Props = {
   workoutLogId: string;
@@ -48,12 +20,15 @@ type Props = {
   rows: LoggerRow[];
   initialLogged: LoggedSet[];
   backHref: string;
+  isFree: boolean;
 };
 
 type Field = "weight" | "reps" | "seconds" | "distance" | "rpe";
 type Draft = Partial<Record<Field, string>>;
 
 const keyOf = (rowId: string, setNumber: number) => `${rowId}:${setNumber}`;
+const rowKey = (i: SetInput) => i.sessionExerciseId ?? i.workoutExerciseId;
+const sameSet = (a: SetInput, b: SetInput) => rowKey(a) === rowKey(b) && a.setNumber === b.setNumber;
 const trim = (n: number) => String(Math.round(n * 100) / 100);
 const parse = (v: string | undefined) => {
   if (v == null || v.trim() === "") return null;
@@ -75,7 +50,8 @@ function columns(row: LoggerRow) {
 }
 
 export function Logger(props: Props) {
-  const { rows, unit } = props;
+  const { unit } = props;
+  const [rows, setRows] = useState<LoggerRow[]>(props.rows);
   const toDisplay = useCallback((kg: number) => (unit === "lbs" ? Math.round((kg / KG_PER_LB) * 2) / 2 : Math.round(kg * 4) / 4), [unit]);
   const toKg = useCallback((shown: number) => (unit === "lbs" ? shown * KG_PER_LB : shown), [unit]);
 
@@ -102,7 +78,6 @@ export function Logger(props: Props) {
   );
 
   // ---------------------------------------------------------------- saving
-  const sameSet = (a: SetInput, b: SetInput) => a.sessionExerciseId === b.sessionExerciseId && a.setNumber === b.setNumber;
   const send = useCallback(async (input: SetInput) => {
     try {
       const res = await saveSet(input);
@@ -137,7 +112,8 @@ export function Logger(props: Props) {
     void send({
       workoutLogId: props.workoutLogId,
       athleteId: props.athleteId,
-      sessionExerciseId: r.id,
+      sessionExerciseId: r.source === "plan" ? r.id : null,
+      workoutExerciseId: r.source === "extra" ? r.id : null,
       exerciseId: r.exerciseId,
       exerciseName: r.name,
       setNumber: entry.setNumber,
@@ -237,8 +213,8 @@ export function Logger(props: Props) {
           },
         }));
       }
-      setUnsaved((q) => q.filter((i) => !(i.sessionExerciseId === row.id && i.setNumber === setNumber)));
-      void deleteSet(props.workoutLogId, row.id, setNumber);
+      setUnsaved((q) => q.filter((i) => !(rowKey(i) === row.id && i.setNumber === setNumber)));
+      void deleteSet(props.workoutLogId, row.id, row.source, setNumber);
       return;
     }
     const entry = entryFor(row, setNumber);
@@ -273,6 +249,19 @@ export function Logger(props: Props) {
     }
     setLogged(next);
     setSkipAsk(null);
+  };
+
+  const removeExercise = (row: LoggerRow) => {
+    setRows((rs) => rs.filter((r) => r.id !== row.id));
+    setLogged((m) => new Map([...m].filter(([, v]) => v.rowId !== row.id)));
+    setUnsaved((q) => q.filter((i) => rowKey(i) !== row.id));
+    setSkipAsk(null);
+    void removeWorkoutExercise(row.id);
+  };
+
+  const added = (row: LoggerRow) => {
+    setRows((rs) => [...rs, row]);
+    setTimeout(() => document.getElementById(`ex-${row.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
   };
 
   // ----------------------------------------------------------------- timer
@@ -326,6 +315,12 @@ export function Logger(props: Props) {
         </div>
         <form action={finishWorkout} className="space-y-5">
           <input type="hidden" name="workout_log_id" value={props.workoutLogId} />
+          {props.isFree && (
+            <label className="block">
+              <span className="mb-1.5 block text-sm text-muted">Name this workout</span>
+              <input name="session_name" defaultValue={props.sessionName} maxLength={80} className="w-full rounded-xl border border-border bg-surface-2 px-4 py-3 outline-none focus:border-accent" />
+            </label>
+          )}
           <div>
             <p className="mb-2 text-sm text-muted">How hard was the session? (1 easy, 10 maximal)</p>
             <div className="grid grid-cols-5 gap-2">
@@ -347,6 +342,14 @@ export function Logger(props: Props) {
             Finish
           </button>
           {unsaved.length > 0 && <p className="text-center text-sm text-accent">Waiting for unsaved sets before finishing.</p>}
+        </form>
+        <form action={discardWorkout} className="space-y-2 border-t border-border pt-4">
+          <input type="hidden" name="workout_log_id" value={props.workoutLogId} />
+          <input type="hidden" name="back" value={props.backHref} />
+          <label className="flex items-center gap-2 text-sm text-muted">
+            <input type="checkbox" required /> Yes, delete this workout and everything logged in it
+          </label>
+          <button className="w-full rounded-xl border border-border px-4 py-3 text-sm text-accent">Discard workout</button>
         </form>
       </div>
     );
@@ -380,7 +383,7 @@ export function Logger(props: Props) {
     const planLine = [row.sets && row.reps ? `${row.sets} × ${row.reps}` : row.reps, row.tempo ? `tempo ${row.tempo}` : null, targetLine].filter(Boolean).join(" · ");
 
     return (
-      <section key={row.id} className="rounded-2xl border border-border bg-surface p-3" style={color ? { borderLeft: `4px solid ${color}` } : undefined}>
+      <section key={row.id} id={`ex-${row.id}`} className="scroll-mt-32 rounded-2xl border border-border bg-surface p-3" style={color ? { borderLeft: `4px solid ${color}` } : undefined}>
         <div className="flex items-start gap-2">
           <div className="min-w-0 flex-1">
             <h2 className="font-semibold leading-snug">
@@ -401,7 +404,21 @@ export function Logger(props: Props) {
 
         {row.note && <p className="mt-2 whitespace-pre-line rounded-lg bg-[#3a3320] px-3 py-2 text-sm text-[#f5e6b3]">{row.note}</p>}
 
-        {skipAsk === row.id && (
+        {skipAsk === row.id && row.source === "extra" && (
+          <div className="mt-2 rounded-xl border border-border bg-surface-2 p-3">
+            <p className="text-sm">Remove {row.name} and its sets from this workout?</p>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setSkipAsk(null)} className="rounded-lg border border-border py-2 text-sm">
+                Keep it
+              </button>
+              <button type="button" onClick={() => removeExercise(row)} className="rounded-lg border border-accent/60 py-2 text-sm text-accent">
+                Remove exercise
+              </button>
+            </div>
+          </div>
+        )}
+
+        {skipAsk === row.id && row.source === "plan" && (
           <div className="mt-2 rounded-xl border border-border bg-surface-2 p-3">
             <p className="text-sm">Can&apos;t do {row.name} today? The open sets are marked as skipped for your coach.</p>
             <div className="mt-2 grid grid-cols-2 gap-2">
@@ -439,7 +456,7 @@ export function Logger(props: Props) {
                   prev.distance != null ? `${trim(prev.distance)} m` : null,
                 ]
                   .filter(Boolean)
-                  .join(" × ")
+                  .join(" × ") || "✓"
               : "–";
             return (
               <div key={k} className="contents">
@@ -494,7 +511,9 @@ export function Logger(props: Props) {
       <div>
         <h1 className="text-2xl font-bold">{props.sessionName}</h1>
         {props.athleteName && <p className="mt-0.5 text-sm text-muted">Logging for {props.athleteName}</p>}
-        <p className="mt-1 text-sm text-muted">Grey numbers are the plan. Tap ✓ to log a set as planned, or type what you did first.</p>
+        <p className="mt-1 text-sm text-muted">
+          {props.isFree ? "Add exercises as you go. Grey numbers are from last time." : "Grey numbers are the plan. Tap ✓ to log a set as planned, or type what you did first."}
+        </p>
       </div>
 
       {prep.length > 0 && <h2 className="text-xs font-semibold tracking-[0.2em] text-muted">PREP CIRCUIT</h2>}
@@ -502,9 +521,106 @@ export function Logger(props: Props) {
       {work.length > 0 && prep.length > 0 && <h2 className="pt-2 text-xs font-semibold tracking-[0.2em] text-muted">WORKOUT</h2>}
       {work.map(exerciseCard)}
 
+      {rows.length === 0 && (
+        <div className="rounded-2xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted">
+          No exercises yet. Search for your first one below.
+        </div>
+      )}
+
+      <AddExercise workoutLogId={props.workoutLogId} onAdded={added} />
+
       <button type="button" onClick={() => setView("finish")} className="w-full rounded-2xl bg-accent px-4 py-4 text-lg font-bold text-accent-text">
         Finish workout
       </button>
+    </div>
+  );
+}
+
+type Hit = { id: string; name: string; movement_pattern: string | null; equipment: string | null };
+
+/** Search the library while typing and add the exercise to the workout in one tap. */
+function AddExercise({ workoutLogId, onAdded }: { workoutLogId: string; onAdded: (row: LoggerRow) => void }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [hits, setHits] = useState<Hit[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState(false);
+  const ticket = useRef(0);
+
+  useEffect(() => {
+    const term = q.trim();
+    if (term.length < 2) return;
+    const mine = ++ticket.current;
+    const t = setTimeout(async () => {
+      const { data } = await createClient().rpc("search_exercises", { q: term });
+      if (mine === ticket.current) setHits((data ?? []) as Hit[]);
+    }, 180);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  const add = async (id: string | null, name: string) => {
+    setBusy(id ?? "new");
+    setError(false);
+    const row = await addWorkoutExercise(workoutLogId, id, name).catch(() => null);
+    setBusy(null);
+    if (!row) return setError(true);
+    onAdded(row);
+    setQ("");
+    setHits([]);
+    setOpen(false);
+  };
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="w-full rounded-2xl border border-dashed border-accent/60 px-4 py-4 font-semibold text-accent active:opacity-70">
+        + Add exercise
+      </button>
+    );
+  }
+
+  const term = q.trim();
+  const exact = hits.some((h) => h.name.toLowerCase() === term.toLowerCase());
+  return (
+    <div className="rounded-2xl border border-border bg-surface p-3">
+      <div className="flex gap-2">
+        <input
+          autoFocus
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search exercise, e.g. bench"
+          autoComplete="off"
+          className="h-11 min-w-0 flex-1 rounded-xl border border-border bg-surface-2 px-3 outline-none placeholder:text-muted focus:border-accent"
+        />
+        <button type="button" onClick={() => setOpen(false)} className="rounded-xl border border-border px-3 text-sm text-muted">
+          Cancel
+        </button>
+      </div>
+      {error && <p className="mt-2 text-sm text-accent">Could not add that exercise. Try again.</p>}
+      {term.length >= 2 && (
+        <ul className="mt-2 divide-y divide-border">
+          {hits.map((h) => (
+            <li key={h.id}>
+              <button type="button" disabled={busy !== null} onClick={() => add(h.id, h.name)} className="flex w-full items-center gap-3 py-2.5 text-left disabled:opacity-50">
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium">{h.name}</span>
+                  <span className="block truncate text-xs text-muted">{[h.movement_pattern, h.equipment].filter(Boolean).join(" · ")}</span>
+                </span>
+                <span className="text-sm text-accent">{busy === h.id ? "Adding…" : "Add"}</span>
+              </button>
+            </li>
+          ))}
+          {!exact && (
+            <li>
+              <button type="button" disabled={busy !== null} onClick={() => add(null, term)} className="flex w-full items-center gap-3 py-2.5 text-left disabled:opacity-50">
+                <span className="min-w-0 flex-1 truncate">
+                  Add &ldquo;{term}&rdquo; as a new exercise
+                </span>
+                <span className="text-sm text-accent">{busy === "new" ? "Adding…" : "Add"}</span>
+              </button>
+            </li>
+          )}
+        </ul>
+      )}
     </div>
   );
 }

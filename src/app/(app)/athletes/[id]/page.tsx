@@ -4,6 +4,7 @@ import { ActionButton, BackLink, Card, Field, Notice, SecondaryButton, Select, i
 import { requireCoach } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { copyProgram, createProgram, updateAthlete } from "../../coach-actions";
+import { startFreeWorkout } from "../../athlete-actions";
 
 export default async function AthletePage({ params, searchParams }: PageProps<"/athletes/[id]">) {
   await requireCoach();
@@ -33,19 +34,23 @@ export default async function AthletePage({ params, searchParams }: PageProps<"/
       {sp.saved && <Notice kind="ok">Saved.</Notice>}
       {typeof sp.error === "string" && <Notice kind="error">{sp.error}</Notice>}
 
-      {(liveSessions ?? []).length > 0 && (
-        <Card>
-          <h2 className="font-semibold">Log a session for {athlete.full_name.split(" ")[0]}</h2>
-          <p className="mt-1 text-sm text-muted">Opens the same logging screen the athlete uses, with you entering the numbers.</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {(liveSessions ?? []).map((s) => (
-              <Link key={s.id} href={`/session/${s.id}?athlete=${athlete.id}`} className="rounded-xl border border-border bg-surface-2 px-4 py-2.5 text-sm font-medium">
-                {s.name}
-              </Link>
-            ))}
-          </div>
-        </Card>
-      )}
+      <Card>
+        <h2 className="font-semibold">Log a session for {athlete.full_name.split(" ")[0]}</h2>
+        <p className="mt-1 text-sm text-muted">Opens the same logging screen the athlete uses, with you entering the numbers.</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {(liveSessions ?? []).map((s) => (
+            <Link key={s.id} href={`/session/${s.id}?athlete=${athlete.id}`} className="rounded-xl border border-border bg-surface-2 px-4 py-2.5 text-sm font-medium">
+              {s.name}
+            </Link>
+          ))}
+          <form action={startFreeWorkout}>
+            <input type="hidden" name="athlete_id" value={athlete.id} />
+            <ActionButton className="rounded-xl border border-dashed border-accent/60 px-4 py-2.5 text-sm font-medium text-accent" pendingLabel="Starting…">
+              + Free workout
+            </ActionButton>
+          </form>
+        </div>
+      </Card>
 
       <Link href={`/athletes/${athlete.id}/maxes`} className="flex items-center justify-between rounded-2xl border border-border bg-surface px-5 py-4">
         <span>

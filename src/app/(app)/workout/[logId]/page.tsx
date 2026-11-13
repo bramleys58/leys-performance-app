@@ -4,8 +4,9 @@ import { Card, SecondaryButton } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { epley, roundToStep, sortRows, type PlanRow, type TrackingType } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/server";
+import { extraRow, type LoggedSet, type LoggerRow } from "@/lib/logger-types";
 import { reopenWorkout } from "../../athlete-actions";
-import { Logger, type LoggedSet, type LoggerRow } from "./logger";
+import { Logger } from "./logger";
 
 const KG_PER_LB = 0.45359237;
 
@@ -24,7 +25,7 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
   // A coach logging their own training sees it like an athlete would.
   const forClient = user.role === "coach" && athlete.user_id !== user.id;
 
-  const [{ data: rowData }, { data: setData }] = await Promise.all([
+  const [{ data: rowData }, { data: setData }, { data: extraData }] = await Promise.all([
     log.session_id
       ? supabase
           .from("session_exercises")
@@ -32,15 +33,23 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
           .eq("session_id", log.session_id)
       : Promise.resolve({ data: [] as unknown[] }),
     supabase.from("set_logs").select("*").eq("workout_log_id", logId),
+    supabase
+      .from("workout_exercises")
+      .select("id, exercise_id, display_name, position, exercises(tracking_type, weight_step, video_url)")
+      .eq("workout_log_id", logId)
+      .order("position"),
   ]);
+  type Extra = { id: string; exercise_id: string | null; display_name: string; position: number; exercises: { tracking_type: TrackingType; weight_step: number; video_url: string | null } | null };
+  const extras = (extraData ?? []) as unknown as Extra[];
+  const isFree = !log.session_id;
 
   type Row = PlanRow & { exercises: { tracking_type: TrackingType; weight_step: number; video_url: string | null } | null };
   const rows = sortRows((rowData ?? []) as Row[]);
-  const exerciseIds = [...new Set(rows.map((r) => r.exercise_id).filter(Boolean))] as string[];
+  const exerciseIds = [...new Set([...rows.map((r) => r.exercise_id), ...extras.map((e) => e.exercise_id)].filter(Boolean))] as string[];
 
   const [{ data: lastData }, { data: maxData }] = await Promise.all([
     exerciseIds.length
-      ? supabase.rpc("previous_sets", { p_athlete: athlete.id, p_exercises: exerciseIds, p_before: log.performed_on })
+      ? supabase.rpc("previous_sets", { p_athlete: athlete.id, p_exercises: exerciseIds, p_before: log.performed_on, p_exclude: logId })
       : Promise.resolve({ data: [] }),
     exerciseIds.length
       ? supabase.from("maxes").select("exercise_id, value").eq("athlete_id", athlete.id).eq("is_active", true).in("exercise_id", exerciseIds)
@@ -65,6 +74,7 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
     }
     return {
       id: r.id,
+      source: "plan" as const,
       exerciseId: r.exercise_id,
       name: r.display_name,
       section: r.section,
@@ -91,12 +101,17 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
     };
   });
 
-  type SetRow = { session_exercise_id: string | null; exercise_id: string | null; exercise_name: string; set_number: number; weight: number | null; reps: number | null; seconds: number | null; distance: number | null; rpe: number | null; skipped: boolean };
+  for (const e of extras) {
+    const prev = ((e.exercise_id ? prevBy.get(e.exercise_id) : undefined) ?? []) as Prev[];
+    loggerRows.push(extraRow(e, e.exercises, prev, 3));
+  }
+
+  type SetRow = { session_exercise_id: string | null; workout_exercise_id: string | null; exercise_id: string | null; exercise_name: string; set_number: number; weight: number | null; reps: number | null; seconds: number | null; distance: number | null; rpe: number | null; skipped: boolean };
   const sets = (setData ?? []) as SetRow[];
   const logged: LoggedSet[] = sets
-    .filter((s) => s.session_exercise_id)
+    .filter((s) => s.session_exercise_id || s.workout_exercise_id)
     .map((s) => ({
-      rowId: s.session_exercise_id as string,
+      rowId: (s.session_exercise_id ?? s.workout_exercise_id) as string,
       setNumber: s.set_number,
       weight: s.weight == null ? null : Number(s.weight),
       reps: s.reps,
@@ -119,8 +134,7 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
     const todayBest = new Map<string, { name: string; e1rm: number; weight: number; reps: number }>();
     for (const s of done) {
       if (!s.exercise_id || !s.weight || !s.reps) continue;
-      const row = rows.find((r) => r.exercise_id === s.exercise_id);
-      if ((row?.exercises?.tracking_type ?? "load") !== "load") continue;
+      if ((loggerRows.find((r) => r.exerciseId === s.exercise_id)?.tracking ?? "load") !== "load") continue;
       const e = epley(Number(s.weight), s.reps);
       if (e && e > (todayBest.get(s.exercise_id)?.e1rm ?? 0)) todayBest.set(s.exercise_id, { name: s.exercise_name, e1rm: e, weight: Number(s.weight), reps: s.reps });
     }
@@ -212,6 +226,7 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
       rows={loggerRows}
       initialLogged={logged}
       backHref={backHref}
+      isFree={isFree}
     />
   );
 }

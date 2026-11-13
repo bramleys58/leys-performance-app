@@ -123,6 +123,12 @@ export async function finishWorkout(fd: FormData) {
     })
     .eq("id", logId);
 
+  // A different date (for a workout logged afterwards). Never in the future.
+  const date = String(fd.get("performed_on") ?? "");
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date) && date <= todayISO()) {
+    await supabase.from("workout_logs").update({ performed_on: date }).eq("id", logId);
+  }
+
   revalidatePath("/");
   revalidatePath(`/workout/${logId}`);
   redirect(`/workout/${logId}`);
@@ -177,7 +183,7 @@ export async function startFreeWorkout(fd: FormData) {
 }
 
 /** Adds an exercise to a workout that is in progress and returns it ready for the logging screen. */
-export async function addWorkoutExercise(workoutLogId: string, exerciseId: string | null, name: string): Promise<LoggerRow | null> {
+export async function addWorkoutExercise(workoutLogId: string, exerciseId: string | null, name: string, supersetGroup: string | null = null): Promise<LoggerRow | null> {
   const user = await requireUser();
   const supabase = await createClient();
   const display = name.trim().slice(0, 120);
@@ -200,8 +206,15 @@ export async function addWorkoutExercise(workoutLogId: string, exerciseId: strin
   const { count } = await supabase.from("workout_exercises").select("id", { count: "exact", head: true }).eq("workout_log_id", workoutLogId);
   const { data: row, error } = await supabase
     .from("workout_exercises")
-    .insert({ workout_log_id: workoutLogId, athlete_id: log.athlete_id, exercise_id: exId, display_name: display, position: count ?? 0 })
-    .select("id, exercise_id, display_name, position")
+    .insert({
+      workout_log_id: workoutLogId,
+      athlete_id: log.athlete_id,
+      exercise_id: exId,
+      display_name: display,
+      position: count ?? 0,
+      superset_group: supersetGroup?.toUpperCase().slice(0, 2) || null,
+    })
+    .select("id, exercise_id, display_name, position, superset_group")
     .single();
   if (error || !row) return null;
 
@@ -229,4 +242,19 @@ export async function discardWorkout(fd: FormData) {
   await supabase.from("workout_logs").delete().eq("id", logId).is("finished_at", null);
   revalidatePath("/");
   redirect(back.startsWith("/") && !back.startsWith("//") ? back : "/");
+}
+
+/** Puts added exercises in (or out of) a superset. Only exercises added during a workout can change. */
+export async function setSupersetGroups(updates: { id: string; group: string | null; position?: number }[]): Promise<{ ok: boolean }> {
+  await requireUser();
+  const supabase = await createClient();
+  const results = await Promise.all(
+    updates.map((u) =>
+      supabase
+        .from("workout_exercises")
+        .update({ superset_group: u.group?.toUpperCase().slice(0, 2) || null, ...(u.position != null ? { position: u.position } : {}) })
+        .eq("id", u.id),
+    ),
+  );
+  return { ok: results.every((r) => !r.error) };
 }

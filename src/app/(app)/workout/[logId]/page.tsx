@@ -35,11 +35,11 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
     supabase.from("set_logs").select("*").eq("workout_log_id", logId),
     supabase
       .from("workout_exercises")
-      .select("id, exercise_id, display_name, position, exercises(tracking_type, weight_step, video_url)")
+      .select("id, exercise_id, display_name, position, superset_group, exercises(tracking_type, weight_step, video_url)")
       .eq("workout_log_id", logId)
       .order("position"),
   ]);
-  type Extra = { id: string; exercise_id: string | null; display_name: string; position: number; exercises: { tracking_type: TrackingType; weight_step: number; video_url: string | null } | null };
+  type Extra = { id: string; exercise_id: string | null; display_name: string; position: number; superset_group: string | null; exercises: { tracking_type: TrackingType; weight_step: number; video_url: string | null } | null };
   const extras = (extraData ?? []) as unknown as Extra[];
   const isFree = !log.session_id;
 
@@ -227,6 +227,7 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
       initialLogged={logged}
       backHref={backHref}
       isFree={isFree}
+      performedOn={log.performed_on}
     />
   );
 }

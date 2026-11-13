@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { LoggedSet, LoggerRow } from "@/lib/logger-types";
+import { displayOrder, nextGroupLetter, type LoggedSet, type LoggerRow } from "@/lib/logger-types";
 import { SUPERSET_COLORS, firstNumber, looksLikeTime, supersetLabels } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/client";
-import { addWorkoutExercise, deleteSet, discardWorkout, finishWorkout, removeWorkoutExercise, saveSet, type SetInput } from "../../athlete-actions";
+import { addWorkoutExercise, deleteSet, discardWorkout, finishWorkout, removeWorkoutExercise, saveSet, setSupersetGroups, type SetInput } from "../../athlete-actions";
 
 const KG_PER_LB = 0.45359237;
 
@@ -21,12 +21,14 @@ type Props = {
   initialLogged: LoggedSet[];
   backHref: string;
   isFree: boolean;
+  performedOn: string;
 };
 
 type Field = "weight" | "reps" | "seconds" | "distance" | "rpe";
 type Draft = Partial<Record<Field, string>>;
 
 const keyOf = (rowId: string, setNumber: number) => `${rowId}:${setNumber}`;
+const todayLocal = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Brussels" }).format(new Date());
 const rowKey = (i: SetInput) => i.sessionExerciseId ?? i.workoutExerciseId;
 const sameSet = (a: SetInput, b: SetInput) => rowKey(a) === rowKey(b) && a.setNumber === b.setNumber;
 const trim = (n: number) => String(Math.round(n * 100) / 100);
@@ -55,9 +57,10 @@ export function Logger(props: Props) {
   const toDisplay = useCallback((kg: number) => (unit === "lbs" ? Math.round((kg / KG_PER_LB) * 2) / 2 : Math.round(kg * 4) / 4), [unit]);
   const toKg = useCallback((shown: number) => (unit === "lbs" ? shown * KG_PER_LB : shown), [unit]);
 
+  const ordered = useMemo(() => displayOrder(rows), [rows]);
   const labels = useMemo(
-    () => supersetLabels(rows.map((r) => ({ id: r.id, section: r.section, superset_group: r.supersetGroup }))),
-    [rows],
+    () => supersetLabels(ordered.map((r) => ({ id: r.id, section: r.section, superset_group: r.supersetGroup }))),
+    [ordered],
   );
 
   const [logged, setLogged] = useState(() => new Map(props.initialLogged.map((s) => [keyOf(s.rowId, s.setNumber), s])));
@@ -65,6 +68,7 @@ export function Logger(props: Props) {
   const [extra, setExtra] = useState<Record<string, number>>({});
   const [unsaved, setUnsaved] = useState<SetInput[]>([]);
   const [skipAsk, setSkipAsk] = useState<string | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [view, setView] = useState<"log" | "finish">("log");
 
   /** Number of set rows shown for an exercise: the plan, plus added sets, never fewer than what is logged. */
@@ -259,9 +263,57 @@ export function Logger(props: Props) {
     void removeWorkoutExercise(row.id);
   };
 
-  const added = (row: LoggerRow) => {
+  /** Exercises an added exercise can be supersetted with: other added ones, or planned ones already in a superset. */
+  const supersetTargets = (except?: string) =>
+    ordered.filter((r) => r.id !== except && r.section === "workout" && (r.source === "extra" || r.supersetGroup));
+
+  /** The letter to use when joining a target, and the target's own update if it needs a letter first. */
+  const groupFor = (target: LoggerRow, all: LoggerRow[]) => {
+    const group = (target.supersetGroup ?? "").toUpperCase() || nextGroupLetter(all);
+    return { group, targetUpdate: target.supersetGroup ? null : { id: target.id, group } };
+  };
+
+  const applyGroups = (updates: { id: string; group: string | null }[]) => {
+    if (updates.length === 0) return;
+    setRows((rs) => rs.map((r) => {
+      const u = updates.find((x) => x.id === r.id);
+      return u ? { ...r, supersetGroup: u.group } : r;
+    }));
+    void setSupersetGroups(updates.filter((u) => rows.find((r) => r.id === u.id)?.source === "extra"));
+  };
+
+  const joinSuperset = (row: LoggerRow, target: LoggerRow) => {
+    const { group, targetUpdate } = groupFor(target, rows);
+    // The exercise that joins goes to the end of the superset (A1, A2, then A3).
+    const last = Math.max(...rows.filter((r) => r.source === "extra").map((r) => r.position));
+    const position = last + 1;
+    setRows((rs) => [
+      ...rs.filter((r) => r.id !== row.id).map((r) => (targetUpdate && r.id === targetUpdate.id ? { ...r, supersetGroup: group } : r)),
+      { ...row, supersetGroup: group, position },
+    ]);
+    void setSupersetGroups([{ id: row.id, group, position: position - 1000 }, ...(targetUpdate && target.source === "extra" ? [targetUpdate] : [])]);
+    setSkipAsk(null);
+  };
+
+  const leaveSuperset = (row: LoggerRow) => {
+    const g = (row.supersetGroup ?? "").toUpperCase();
+    const rest = rows.filter((r) => r.id !== row.id && (r.supersetGroup ?? "").toUpperCase() === g);
+    // A superset of one is not a superset: clear the last added member too.
+    const alone = rest.length === 1 && rest[0].source === "extra" ? [{ id: rest[0].id, group: null }] : [];
+    applyGroups([{ id: row.id, group: null }, ...alone]);
+    setSkipAsk(null);
+  };
+
+  /** Adds an exercise, optionally straight into a superset with an existing one. */
+  const addExercise = async (exerciseId: string | null, name: string, targetId: string | null): Promise<boolean> => {
+    const target = targetId ? rows.find((r) => r.id === targetId) : undefined;
+    const plan = target ? groupFor(target, rows) : null;
+    const row = await addWorkoutExercise(props.workoutLogId, exerciseId, name, plan?.group ?? null).catch(() => null);
+    if (!row) return false;
+    if (plan?.targetUpdate) applyGroups([plan.targetUpdate]);
     setRows((rs) => [...rs, row]);
     setTimeout(() => document.getElementById(`ex-${row.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+    return true;
   };
 
   // ----------------------------------------------------------------- timer
@@ -315,6 +367,10 @@ export function Logger(props: Props) {
         </div>
         <form action={finishWorkout} className="space-y-5">
           <input type="hidden" name="workout_log_id" value={props.workoutLogId} />
+          <label className="block">
+            <span className="mb-1.5 block text-sm text-muted">Date (change it if you are logging an earlier workout)</span>
+            <input type="date" name="performed_on" defaultValue={props.performedOn} max={props.performedOn > todayLocal() ? props.performedOn : todayLocal()} className="w-full rounded-xl border border-border bg-surface-2 px-4 py-3 outline-none focus:border-accent" />
+          </label>
           {props.isFree && (
             <label className="block">
               <span className="mb-1.5 block text-sm text-muted">Name this workout</span>
@@ -405,16 +461,40 @@ export function Logger(props: Props) {
         {row.note && <p className="mt-2 whitespace-pre-line rounded-lg bg-[#3a3320] px-3 py-2 text-sm text-[#f5e6b3]">{row.note}</p>}
 
         {skipAsk === row.id && row.source === "extra" && (
-          <div className="mt-2 rounded-xl border border-border bg-surface-2 p-3">
-            <p className="text-sm">Remove {row.name} and its sets from this workout?</p>
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <button type="button" onClick={() => setSkipAsk(null)} className="rounded-lg border border-border py-2 text-sm">
-                Keep it
+          <div className="mt-2 space-y-3 rounded-xl border border-border bg-surface-2 p-3">
+            {row.supersetGroup ? (
+              <button type="button" onClick={() => leaveSuperset(row)} className="w-full rounded-lg border border-border py-2 text-sm">
+                Remove from superset {labels[row.id]?.[0] ?? ""}
               </button>
-              <button type="button" onClick={() => removeExercise(row)} className="rounded-lg border border-accent/60 py-2 text-sm text-accent">
+            ) : supersetTargets(row.id).length > 0 ? (
+              <div>
+                <p className="text-sm text-muted">Superset with</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {supersetTargets(row.id).map((t) => (
+                    <button key={t.id} type="button" onClick={() => joinSuperset(row, t)} className="rounded-lg border border-border bg-surface px-3 py-2 text-left text-sm">
+                      {labels[t.id] && <span className="font-bold" style={{ color: SUPERSET_COLORS[labels[t.id][0]] }}>{labels[t.id]} </span>}
+                      {t.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted">Add another exercise to make a superset with this one.</p>
+            )}
+            {confirmRemove === row.id ? (
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => setConfirmRemove(null)} className="rounded-lg border border-border py-2 text-sm">
+                  Keep it
+                </button>
+                <button type="button" onClick={() => removeExercise(row)} className="rounded-lg border border-accent/60 py-2 text-sm text-accent">
+                  Yes, remove
+                </button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => setConfirmRemove(row.id)} className="w-full rounded-lg border border-border py-2 text-sm text-accent">
                 Remove exercise
               </button>
-            </div>
+            )}
           </div>
         )}
 
@@ -502,8 +582,8 @@ export function Logger(props: Props) {
     );
   };
 
-  const prep = rows.filter((r) => r.section === "prep");
-  const work = rows.filter((r) => r.section === "workout");
+  const prep = ordered.filter((r) => r.section === "prep");
+  const work = ordered.filter((r) => r.section === "workout");
 
   return (
     <div className="space-y-4">
@@ -527,7 +607,7 @@ export function Logger(props: Props) {
         </div>
       )}
 
-      <AddExercise workoutLogId={props.workoutLogId} onAdded={added} />
+      <AddExercise targets={supersetTargets().map((t) => ({ id: t.id, name: t.name, label: labels[t.id] ?? null }))} onAdd={addExercise} />
 
       <button type="button" onClick={() => setView("finish")} className="w-full rounded-2xl bg-accent px-4 py-4 text-lg font-bold text-accent-text">
         Finish workout
@@ -539,12 +619,19 @@ export function Logger(props: Props) {
 type Hit = { id: string; name: string; movement_pattern: string | null; equipment: string | null };
 
 /** Search the library while typing and add the exercise to the workout in one tap. */
-function AddExercise({ workoutLogId, onAdded }: { workoutLogId: string; onAdded: (row: LoggerRow) => void }) {
+function AddExercise({
+  targets,
+  onAdd,
+}: {
+  targets: { id: string; name: string; label: string | null }[];
+  onAdd: (exerciseId: string | null, name: string, targetId: string | null) => Promise<boolean>;
+}) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<Hit[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState(false);
+  const [target, setTarget] = useState("");
   const ticket = useRef(0);
 
   useEffect(() => {
@@ -561,12 +648,12 @@ function AddExercise({ workoutLogId, onAdded }: { workoutLogId: string; onAdded:
   const add = async (id: string | null, name: string) => {
     setBusy(id ?? "new");
     setError(false);
-    const row = await addWorkoutExercise(workoutLogId, id, name).catch(() => null);
+    const ok = await onAdd(id, name, target || null);
     setBusy(null);
-    if (!row) return setError(true);
-    onAdded(row);
+    if (!ok) return setError(true);
     setQ("");
     setHits([]);
+    setTarget("");
     setOpen(false);
   };
 
@@ -581,7 +668,7 @@ function AddExercise({ workoutLogId, onAdded }: { workoutLogId: string; onAdded:
   const term = q.trim();
   const exact = hits.some((h) => h.name.toLowerCase() === term.toLowerCase());
   return (
-    <div className="rounded-2xl border border-border bg-surface p-3">
+    <div className="space-y-2 rounded-2xl border border-border bg-surface p-3">
       <div className="flex gap-2">
         <input
           autoFocus
@@ -595,9 +682,23 @@ function AddExercise({ workoutLogId, onAdded }: { workoutLogId: string; onAdded:
           Cancel
         </button>
       </div>
-      {error && <p className="mt-2 text-sm text-accent">Could not add that exercise. Try again.</p>}
+      {targets.length > 0 && (
+        <label className="flex items-center gap-2 text-sm text-muted">
+          <span className="shrink-0">Superset with</span>
+          <select value={target} onChange={(e) => setTarget(e.target.value)} aria-label="Superset with" className="h-10 min-w-0 flex-1 rounded-lg border border-border bg-surface-2 px-2 text-text outline-none focus:border-accent">
+            <option value="">No superset</option>
+            {targets.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.label ? `${t.label} ` : ""}
+                {t.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {error && <p className="text-sm text-accent">Could not add that exercise. Try again.</p>}
       {term.length >= 2 && (
-        <ul className="mt-2 divide-y divide-border">
+        <ul className="divide-y divide-border">
           {hits.map((h) => (
             <li key={h.id}>
               <button type="button" disabled={busy !== null} onClick={() => add(h.id, h.name)} className="flex w-full items-center gap-3 py-2.5 text-left disabled:opacity-50">

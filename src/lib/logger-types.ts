@@ -39,7 +39,7 @@ type PrevRow = { set_number: number; weight: number | string | null; reps: numbe
 
 /** Builds the row for an exercise added during a workout. */
 export function extraRow(
-  r: { id: string; exercise_id: string | null; display_name: string; position: number },
+  r: { id: string; exercise_id: string | null; display_name: string; position: number; superset_group?: string | null },
   info: ExerciseInfo,
   previous: PrevRow[],
   setCount = 1,
@@ -51,7 +51,7 @@ export function extraRow(
     exerciseId: r.exercise_id,
     name: r.display_name,
     section: "workout",
-    supersetGroup: null,
+    supersetGroup: r.superset_group ?? null,
     position: 1000 + r.position,
     sets: setCount,
     reps: null,
@@ -66,4 +66,34 @@ export function extraRow(
     plannedKg: null,
     previous: previous.map((p) => ({ setNumber: p.set_number, weight: n(p.weight), reps: p.reps, seconds: n(p.seconds), distance: n(p.distance) })),
   };
+}
+
+/**
+ * Display order on the logging screen: the program's order, with every added
+ * exercise that joined a superset moved right behind the rest of its group.
+ */
+export function displayOrder(rows: LoggerRow[]): LoggerRow[] {
+  const out: LoggerRow[] = [];
+  for (const r of rows) {
+    const g = (r.supersetGroup ?? "").toUpperCase();
+    let at = -1;
+    if (r.source === "extra" && g) {
+      for (let i = out.length - 1; i >= 0; i--) {
+        if (out[i].section === r.section && (out[i].supersetGroup ?? "").toUpperCase() === g) {
+          at = i;
+          break;
+        }
+      }
+    }
+    if (at === -1) out.push(r);
+    else out.splice(at + 1, 0, r);
+  }
+  return out;
+}
+
+/** The first superset letter not used yet in this workout. */
+export function nextGroupLetter(rows: LoggerRow[]): string {
+  const used = new Set(rows.map((r) => (r.supersetGroup ?? "").toUpperCase()).filter(Boolean));
+  for (const l of "ABCDEFGHIJKLMNOPQRSTUVWXYZ") if (!used.has(l)) return l;
+  return "Z";
 }

@@ -1,41 +1,52 @@
-import Link from "next/link";
+import { AppMenu, type MenuSection } from "@/components/app-menu";
 import { requireUser } from "@/lib/auth";
 import { getMyAthlete } from "@/lib/athlete";
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const user = await requireUser();
-  const ownAthlete = user.role === "coach" ? await getMyAthlete() : null;
-  const links =
+  const athlete = await getMyAthlete();
+
+  const sections: MenuSection[] =
     user.role === "coach"
       ? [
-          { href: "/", label: "Home" },
-          { href: "/athletes", label: "Athletes" },
-          { href: "/follow-up", label: "Follow-up" },
-          { href: "/library", label: "Library" },
-          ...(ownAthlete ? [{ href: "/me", label: "My training" }] : []),
-          { href: "/account", label: "Account" },
+          {
+            title: "Coaching",
+            links: [
+              { href: "/", label: "Home", icon: "🏠" },
+              { href: "/athletes", label: "Athletes", icon: "👥" },
+              { href: "/follow-up", label: "Follow-up", icon: "📋" },
+            ],
+          },
+          { title: "Programming", links: [{ href: "/library", label: "Exercise library", icon: "📚" }] },
+          ...(athlete
+            ? [
+                {
+                  title: "My training",
+                  links: [
+                    { href: "/me", label: "Today", icon: "💪" },
+                    { href: "/history", label: "Workout history", icon: "🕘" },
+                  ],
+                },
+              ]
+            : []),
+          { title: "Account", links: [{ href: "/account", label: "Account", icon: "👤" }] },
         ]
       : [
-          { href: "/", label: "Today" },
-          { href: "/account", label: "Account" },
+          {
+            title: "Training",
+            links: [
+              { href: "/", label: "Today", icon: "💪" },
+              { href: "/history", label: "Workout history", icon: "🕘" },
+            ],
+          },
+          { title: "Account", links: [{ href: "/account", label: "Account", icon: "👤" }] },
         ];
+
+  const name = user.fullName || athlete?.full_name || user.email;
 
   return (
     <>
-      <header className="sticky top-0 z-10 border-b border-border bg-bg/90 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-3xl items-center justify-between px-5 py-3">
-          <Link href="/" className="text-xs font-semibold tracking-[0.25em] text-accent">
-            LEYS PERFORMANCE
-          </Link>
-          <nav className="flex flex-wrap justify-end gap-x-4 gap-y-1 text-sm">
-            {links.map((l) => (
-              <Link key={l.href} href={l.href} className="text-muted hover:text-text">
-                {l.label}
-              </Link>
-            ))}
-          </nav>
-        </div>
-      </header>
+      <AppMenu sections={sections} name={name} role={user.role === "coach" ? "Coach" : "Athlete"} />
       <main className="mx-auto w-full max-w-3xl flex-1 px-5 py-6">{children}</main>
     </>
   );

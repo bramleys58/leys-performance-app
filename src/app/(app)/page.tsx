@@ -12,11 +12,12 @@ export default async function HomePage() {
 
 async function CoachHome({ firstName }: { firstName: string }) {
   const supabase = await createClient();
-  const [athletes, exercises, review, programs] = await Promise.all([
+  const [athletes, exercises, review, programs, pending] = await Promise.all([
     supabase.from("athletes").select("id", { count: "exact", head: true }).eq("status", "active"),
     supabase.from("exercises").select("id", { count: "exact", head: true }).eq("archived", false),
     supabase.from("exercises").select("id", { count: "exact", head: true }).eq("needs_review", true),
     supabase.from("programs").select("id", { count: "exact", head: true }).eq("status", "active"),
+    supabase.from("exercises").select("id", { count: "exact", head: true }).eq("approved", false),
   ]);
 
   const tiles = [
@@ -49,6 +50,17 @@ async function CoachHome({ firstName }: { firstName: string }) {
           );
         })}
       </div>
+      {(pending.count ?? 0) > 0 && (
+        <Link href="/library?pending=1" className="flex items-center justify-between rounded-2xl border border-accent bg-surface px-5 py-4">
+          <span>
+            <span className="block font-semibold">
+              {pending.count} new exercise{pending.count === 1 ? "" : "s"} to approve
+            </span>
+            <span className="block text-sm text-muted">Added by athletes during a workout</span>
+          </span>
+          <span className="text-muted">→</span>
+        </Link>
+      )}
       <Link href="/follow-up" className="flex items-center justify-between rounded-2xl border border-border bg-surface px-5 py-4">
         <span>
           <span className="block font-semibold">Follow-up</span>

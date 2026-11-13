@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { displayOrder, nextGroupLetter, type LoggedSet, type LoggerRow } from "@/lib/logger-types";
 import { SUPERSET_COLORS, firstNumber, looksLikeTime, supersetLabels } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/client";
-import { addWorkoutExercise, deleteSet, discardWorkout, finishWorkout, removeWorkoutExercise, saveSet, setSupersetGroups, type SetInput } from "../../athlete-actions";
+import { addWorkoutExercise, deleteSet, discardWorkout, finishWorkout, removeWorkoutExercise, saveSet, setSupersetGroups, setWorkoutOrder, type SetInput } from "../../athlete-actions";
 
 const KG_PER_LB = 0.45359237;
 
@@ -22,6 +22,7 @@ type Props = {
   backHref: string;
   isFree: boolean;
   performedOn: string;
+  isCoach: boolean;
 };
 
 type Field = "weight" | "reps" | "seconds" | "distance" | "rpe";
@@ -304,6 +305,54 @@ export function Logger(props: Props) {
     setSkipAsk(null);
   };
 
+  /**
+   * New order of the added exercises after moving one up (-1) or down (+1), or null when it cannot move.
+   * In a superset it swaps with the next member. Otherwise it jumps over a whole superset at once.
+   */
+  const reorder = (row: LoggerRow, dir: -1 | 1): string[] | null => {
+    const g = (r: LoggerRow) => (r.supersetGroup ?? "").toUpperCase();
+    const extras = ordered.filter((r) => r.source === "extra" && r.section === row.section);
+    const order = extras.map((r) => r.id);
+    if (g(row)) {
+      const members = extras.filter((r) => g(r) === g(row));
+      const i = members.findIndex((m) => m.id === row.id);
+      const other = members[i + dir];
+      if (!other) return null;
+      const a = order.indexOf(row.id);
+      const b = order.indexOf(other.id);
+      [order[a], order[b]] = [order[b], order[a]];
+      return order;
+    }
+    // Exercises that joined a planned superset stay next to it and are not part of the blocks.
+    const planGroups = new Set(rows.filter((r) => r.source === "plan" && g(r)).map(g));
+    const blocks: string[][] = [];
+    for (const r of extras) {
+      if (g(r) && planGroups.has(g(r))) continue;
+      const last = blocks[blocks.length - 1];
+      const lastRow = last ? extras.find((x) => x.id === last[0]) : undefined;
+      if (last && g(r) && lastRow && g(lastRow) === g(r)) last.push(r.id);
+      else blocks.push([r.id]);
+    }
+    const i = blocks.findIndex((bl) => bl.includes(row.id));
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= blocks.length) return null;
+    [blocks[i], blocks[j]] = [blocks[j], blocks[i]];
+    const anchored = order.filter((id) => !blocks.some((bl) => bl.includes(id)));
+    return [...blocks.flat(), ...anchored];
+  };
+
+  const moveExercise = (row: LoggerRow, dir: -1 | 1) => {
+    const order = reorder(row, dir);
+    if (!order) return;
+    setRows((rs) => {
+      const byId = new Map(rs.map((r) => [r.id, r]));
+      const moved = order.map((id, i) => ({ ...byId.get(id)!, position: 1000 + i }));
+      return [...rs.filter((r) => !order.includes(r.id)), ...moved];
+    });
+    void setWorkoutOrder(order);
+    setTimeout(() => document.getElementById(`ex-${row.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
+  };
+
   /** Adds an exercise, optionally straight into a superset with an existing one. */
   const addExercise = async (exerciseId: string | null, name: string, targetId: string | null): Promise<boolean> => {
     const target = targetId ? rows.find((r) => r.id === targetId) : undefined;
@@ -462,6 +511,14 @@ export function Logger(props: Props) {
 
         {skipAsk === row.id && row.source === "extra" && (
           <div className="mt-2 space-y-3 rounded-xl border border-border bg-surface-2 p-3">
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" disabled={!reorder(row, -1)} onClick={() => moveExercise(row, -1)} className="rounded-lg border border-border bg-surface py-2 text-sm disabled:opacity-30">
+                ↑ Move up
+              </button>
+              <button type="button" disabled={!reorder(row, 1)} onClick={() => moveExercise(row, 1)} className="rounded-lg border border-border bg-surface py-2 text-sm disabled:opacity-30">
+                ↓ Move down
+              </button>
+            </div>
             {row.supersetGroup ? (
               <button type="button" onClick={() => leaveSuperset(row)} className="w-full rounded-lg border border-border py-2 text-sm">
                 Remove from superset {labels[row.id]?.[0] ?? ""}
@@ -607,7 +664,7 @@ export function Logger(props: Props) {
         </div>
       )}
 
-      <AddExercise targets={supersetTargets().map((t) => ({ id: t.id, name: t.name, label: labels[t.id] ?? null }))} onAdd={addExercise} />
+      <AddExercise targets={supersetTargets().map((t) => ({ id: t.id, name: t.name, label: labels[t.id] ?? null }))} onAdd={addExercise} isCoach={props.isCoach} />
 
       <button type="button" onClick={() => setView("finish")} className="w-full rounded-2xl bg-accent px-4 py-4 text-lg font-bold text-accent-text">
         Finish workout
@@ -622,9 +679,11 @@ type Hit = { id: string; name: string; movement_pattern: string | null; equipmen
 function AddExercise({
   targets,
   onAdd,
+  isCoach,
 }: {
   targets: { id: string; name: string; label: string | null }[];
   onAdd: (exerciseId: string | null, name: string, targetId: string | null) => Promise<boolean>;
+  isCoach: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -713,8 +772,11 @@ function AddExercise({
           {!exact && (
             <li>
               <button type="button" disabled={busy !== null} onClick={() => add(null, term)} className="flex w-full items-center gap-3 py-2.5 text-left disabled:opacity-50">
-                <span className="min-w-0 flex-1 truncate">
-                  Add &ldquo;{term}&rdquo; as a new exercise
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">Add &ldquo;{term}&rdquo; as a new exercise</span>
+                  <span className="block text-xs text-muted">
+                    {isCoach ? "Saved to your library, marked for review" : "Saved for you, your coach checks it before it is added to the library"}
+                  </span>
                 </span>
                 <span className="text-sm text-accent">{busy === "new" ? "Adding…" : "Add"}</span>
               </button>

@@ -228,6 +228,7 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
       backHref={backHref}
       isFree={isFree}
       performedOn={log.performed_on}
+      isCoach={user.role === "coach"}
     />
   );
 }

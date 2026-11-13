@@ -28,13 +28,14 @@ export default async function LibraryPage({ searchParams }: PageProps<"/library"
   const pattern = one(params.pattern);
   const review = one(params.review) === "1";
   const novideo = one(params.novideo) === "1";
+  const pending = one(params.pending) === "1";
   const page = Math.max(1, Number.parseInt(one(params.page) || "1", 10) || 1);
 
   const supabase = await createClient();
 
   let query = supabase
     .from("exercises")
-    .select("id, name, aliases, movement_pattern, equipment, tracking_type, video_url, needs_review", {
+    .select("id, name, aliases, movement_pattern, equipment, tracking_type, video_url, needs_review, approved", {
       count: "exact",
     })
     .eq("archived", false)
@@ -47,6 +48,7 @@ export default async function LibraryPage({ searchParams }: PageProps<"/library"
   if (pattern) query = query.eq("movement_pattern", pattern);
   if (review) query = query.eq("needs_review", true);
   if (novideo) query = query.is("video_url", null);
+  if (pending) query = query.eq("approved", false);
 
   const [{ data: exercises, count, error }, { data: patternRows }] = await Promise.all([
     query,
@@ -63,6 +65,7 @@ export default async function LibraryPage({ searchParams }: PageProps<"/library"
     if (pattern) sp.set("pattern", pattern);
     if (review) sp.set("review", "1");
     if (novideo) sp.set("novideo", "1");
+    if (pending) sp.set("pending", "1");
     if (p > 1) sp.set("page", String(p));
     const s = sp.toString();
     return s ? `/library?${s}` : "/library";
@@ -70,6 +73,7 @@ export default async function LibraryPage({ searchParams }: PageProps<"/library"
 
   return (
     <div className="space-y-5">
+      {one(params.archived) === "1" && <p className="text-sm text-ok">Exercise archived.</p>}
       <div className="flex items-end justify-between">
         <h1 className="text-2xl font-bold">Exercise library</h1>
         <p className="text-sm text-muted tabular-nums">{total} exercises</p>
@@ -95,12 +99,15 @@ export default async function LibraryPage({ searchParams }: PageProps<"/library"
           ))}
         </select>
         <ActionButton className="rounded-xl bg-accent px-5 py-3 font-semibold text-accent-text">Search</ActionButton>
-        <div className="flex gap-5 text-sm text-muted sm:col-span-3">
+        <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted sm:col-span-3">
           <label className="flex items-center gap-2">
             <input type="checkbox" name="review" value="1" defaultChecked={review} /> Needs review
           </label>
           <label className="flex items-center gap-2">
             <input type="checkbox" name="novideo" value="1" defaultChecked={novideo} /> No video
+          </label>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" name="pending" value="1" defaultChecked={pending} /> Added by athletes
           </label>
         </div>
       </form>
@@ -121,10 +128,14 @@ export default async function LibraryPage({ searchParams }: PageProps<"/library"
         {(exercises ?? []).map((e) => (
           <li key={e.id} className="flex items-center gap-3 px-4 py-3">
             <div className="min-w-0 flex-1">
-              <p className="truncate font-medium">
+              <Link href={`/library/${e.id}`} className="block truncate font-medium hover:underline">
                 {e.name}
-                {e.needs_review && <span className="ml-2 align-middle text-xs text-accent">review</span>}
-              </p>
+                {!e.approved ? (
+                  <span className="ml-2 align-middle text-xs text-accent">approve</span>
+                ) : (
+                  e.needs_review && <span className="ml-2 align-middle text-xs text-accent">review</span>
+                )}
+              </Link>
               <p className="truncate text-sm text-muted">
                 {[e.movement_pattern, e.equipment, TRACKING_LABEL[e.tracking_type] ?? e.tracking_type]
                   .filter(Boolean)

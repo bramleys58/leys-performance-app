@@ -33,6 +33,10 @@ async function coachDb() {
   return createClient();
 }
 
+async function coachUserId() {
+  return (await requireCoach()).id;
+}
+
 // ----------------------------------------------------------------- athletes
 
 export async function createAthlete(fd: FormData) {
@@ -234,7 +238,7 @@ export async function addRow(fd: FormData) {
     } else {
       const { data: created } = await db
         .from("exercises")
-        .insert({ name, needs_review: true })
+        .insert({ name, needs_review: true, created_by: await coachUserId() })
         .select("id")
         .single();
       exerciseId = created?.id ?? null;
@@ -368,4 +372,63 @@ export async function removeMax(id: string, fd: FormData) {
   const athleteId = String(fd.get("athlete_id"));
   await db.from("maxes").update({ is_active: false }).eq("id", id);
   go(`/athletes/${athleteId}/maxes`);
+}
+
+// ---------------------------------------------------------------- exercises
+
+const TRACKING = ["load", "bodyweight_reps", "time", "distance", "distance_height", "reps_only", "completion"];
+
+export async function updateExercise(fd: FormData) {
+  const db = await coachDb();
+  const id = String(fd.get("id"));
+  const back = `/library/${id}`;
+  const name = text(fd, "name");
+  if (!name) go(back + "?error=" + encodeURIComponent("A name is required."));
+  const tracking = text(fd, "tracking_type") ?? "load";
+  const aliases = (text(fd, "aliases") ?? "")
+    .split(/[;\n]/)
+    .map((a) => a.trim())
+    .filter((a) => a && a.toLowerCase() !== name.toLowerCase());
+
+  const { error } = await db
+    .from("exercises")
+    .update({
+      name,
+      aliases: [...new Set(aliases)],
+      movement_pattern: text(fd, "movement_pattern"),
+      primary_muscle: text(fd, "primary_muscle"),
+      equipment: text(fd, "equipment"),
+      tracking_type: TRACKING.includes(tracking) ? tracking : "load",
+      weight_step: num(fd, "weight_step") ?? 2.5,
+      counts_for_maxes: fd.get("counts_for_maxes") === "on",
+      default_sets: int(fd, "default_sets"),
+      default_reps: text(fd, "default_reps"),
+      default_tempo: text(fd, "default_tempo"),
+      default_note: text(fd, "default_note"),
+      video_url: text(fd, "video_url"),
+      // Saving the form counts as reviewing it, and approves an athlete's exercise.
+      needs_review: fd.get("keep_review") === "on",
+      approved: true,
+    })
+    .eq("id", id);
+  if (error) {
+    const msg = error.code === "23505" ? "Another exercise already has that name. Merge them instead." : "Could not save the exercise.";
+    go(back + "?error=" + encodeURIComponent(msg));
+  }
+  go(back + "?saved=1");
+}
+
+export async function mergeExercise(fromId: string, fd: FormData) {
+  const db = await coachDb();
+  const into = text(fd, "exercise_id");
+  if (!into || into === fromId) go(`/library/${fromId}?error=` + encodeURIComponent("Pick the exercise to keep from the list."));
+  const { error } = await db.rpc("merge_exercise", { p_from: fromId, p_into: into });
+  if (error) go(`/library/${fromId}?error=` + encodeURIComponent("Could not merge the exercises."));
+  go(`/library/${into}?merged=1`);
+}
+
+export async function archiveExercise(id: string, archived: boolean) {
+  const db = await coachDb();
+  await db.from("exercises").update({ archived, needs_review: false, approved: true }).eq("id", id);
+  go(archived ? "/library?archived=1" : `/library/${id}`);
 }

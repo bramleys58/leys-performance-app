@@ -198,8 +198,13 @@ export async function addWorkoutExercise(workoutLogId: string, exerciseId: strin
     const { data: existing } = await supabase.from("exercises").select("id").ilike("name", display.replace(/[%_\\]/g, "\\$&")).maybeSingle();
     if (existing) exId = existing.id;
     else if (user.role === "coach") {
-      const { data: created } = await supabase.from("exercises").insert({ name: display, needs_review: true }).select("id").single();
+      // The coach's own new exercise goes straight into the library, marked for review.
+      const { data: created } = await supabase.from("exercises").insert({ name: display, needs_review: true, created_by: user.id }).select("id").single();
       exId = created?.id ?? null;
+    } else {
+      // An athlete's new exercise is saved for them and waits for the coach's approval.
+      const { data: suggested } = await supabase.rpc("suggest_exercise", { p_name: display });
+      exId = (suggested as string | null) ?? null;
     }
   }
 
@@ -256,5 +261,13 @@ export async function setSupersetGroups(updates: { id: string; group: string | n
         .eq("id", u.id),
     ),
   );
+  return { ok: results.every((r) => !r.error) };
+}
+
+/** Saves the order of the exercises added during a workout (first id = top). */
+export async function setWorkoutOrder(ids: string[]): Promise<{ ok: boolean }> {
+  await requireUser();
+  const supabase = await createClient();
+  const results = await Promise.all(ids.map((id, i) => supabase.from("workout_exercises").update({ position: i }).eq("id", id)));
   return { ok: results.every((r) => !r.error) };
 }

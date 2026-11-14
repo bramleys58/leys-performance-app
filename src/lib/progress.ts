@@ -1,3 +1,4 @@
+import { readiness, type CheckIn } from "@/lib/checkin";
 import { epley, todayISO, weekRange } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/server";
 import { best, type Test } from "@/lib/testing";
@@ -16,7 +17,8 @@ export async function getProgress(athleteId: string) {
   start.setUTCDate(start.getUTCDate() - 7 * (WEEKS - 1));
   const from = start.toISOString().slice(0, 10);
 
-  const [{ data: logs }, { data: sets }, { data: maxes }, { data: results }, { data: tests }] = await Promise.all([
+  const twoWeeksAgo = new Date(new Date(todayISO() + "T12:00:00Z").getTime() - 13 * 86400000).toISOString().slice(0, 10);
+  const [{ data: logs }, { data: sets }, { data: maxes }, { data: results }, { data: tests }, { data: checkRows }] = await Promise.all([
     supabase.from("workout_logs").select("id, performed_on, finished_at").eq("athlete_id", athleteId).gte("performed_on", from),
     supabase
       .from("set_logs")
@@ -29,6 +31,7 @@ export async function getProgress(athleteId: string) {
     supabase.from("maxes").select("value, source, set_on, exercises(name)").eq("athlete_id", athleteId).eq("is_active", true),
     supabase.from("test_results").select("test_id, value, test_events(held_on)").eq("athlete_id", athleteId),
     supabase.from("tests").select("*"),
+    supabase.from("check_ins").select("*").eq("athlete_id", athleteId).gte("day", twoWeeksAgo).order("day", { ascending: false }),
   ]);
 
   // ---- weekly volume (kg lifted) and sessions, last 8 weeks
@@ -105,5 +108,18 @@ export async function getProgress(athleteId: string) {
     .map((m) => ({ name: m.exercises?.name ?? "Exercise", value: Number(m.value), source: m.source, on: m.set_on }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  return { weeks, prs, maxes: maxList, tests: testSummaries };
+  // ---- check-ins, last 14 days
+  const checkIns = ((checkRows ?? []) as CheckIn[]).map((c) => ({ ...c, readiness: readiness(c) }));
+  const scores = checkIns.map((c) => c.readiness).filter((v): v is number => v != null);
+  const slept = checkIns.map((c) => (c.sleep_hours == null ? null : Number(c.sleep_hours))).filter((v): v is number => v != null);
+  const weights = checkIns.filter((c) => c.bodyweight != null).map((c) => ({ day: c.day, kg: Number(c.bodyweight) }));
+  const wellness = {
+    days: checkIns,
+    avgReadiness: scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null,
+    avgSleep: slept.length ? Math.round((slept.reduce((a, b) => a + b, 0) / slept.length) * 10) / 10 : null,
+    latestWeight: weights[0] ?? null,
+    firstWeight: weights.length > 1 ? weights[weights.length - 1] : null,
+  };
+
+  return { weeks, prs, maxes: maxList, tests: testSummaries, wellness };
 }

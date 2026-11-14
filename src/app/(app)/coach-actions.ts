@@ -1,6 +1,8 @@
 "use server";
 
+import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { requireCoach } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -512,4 +514,40 @@ export async function createTest(fd: FormData) {
     position: 100 + (count ?? 0),
   });
   go("/testing/tests" + (error ? "?error=" + encodeURIComponent(error.code === "23505" ? "A test with that name exists already." : "Could not add the test.") : "?saved=1"));
+}
+
+// ------------------------------------------------------------------ invites
+
+/**
+ * Emails an athlete an invitation to set up their login.
+ * Needs the Supabase secret key as SUPABASE_SECRET_KEY on the server (never in the browser).
+ */
+export async function inviteAthlete(athleteId: string) {
+  const db = await coachDb();
+  const back = `/athletes/${athleteId}`;
+  const secret = process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+  if (!secret || !url) {
+    go(back + "?error=" + encodeURIComponent("Invites from the app are not switched on yet. Add SUPABASE_SECRET_KEY in Vercel (see docs/SETUP.md), or invite this address from Supabase."));
+  }
+
+  const { data: athlete } = await db.from("athletes").select("email, full_name, user_id").eq("id", athleteId).maybeSingle();
+  if (!athlete?.email) go(back + "?error=" + encodeURIComponent("Add an email address to the profile first."));
+  if (athlete.user_id) go(back + "?error=" + encodeURIComponent("This athlete already has a login."));
+
+  const origin = (await headers()).get("origin") ?? "";
+  const admin = createAdminClient(url, secret, { auth: { persistSession: false, autoRefreshToken: false } });
+  const { error } = await admin.auth.admin.inviteUserByEmail(athlete.email, {
+    redirectTo: origin ? `${origin}/auth/callback` : undefined,
+    data: { full_name: athlete.full_name },
+  });
+  if (error) {
+    const msg = /already|registered|exists/i.test(error.message)
+      ? "That email address already has a login. Save the profile again to link it."
+      : /rate|limit/i.test(error.message)
+        ? "Too many emails in a short time. Try again in an hour, or connect an email service."
+        : "The invite could not be sent.";
+    go(back + "?error=" + encodeURIComponent(msg));
+  }
+  go(back + "?invited=1");
 }

@@ -16,7 +16,7 @@ export function ProgressView({ data, unit, historyHref }: { data: Data; unit: "k
   const max = Math.max(...data.weeks.map((w) => w.tonnage), 1);
   const thisWeek = data.weeks[data.weeks.length - 1];
   const lastWeek = data.weeks[data.weeks.length - 2];
-  const empty = data.weeks.every((w) => w.tonnage === 0 && w.sessions === 0) && data.prs.length === 0 && data.maxes.length === 0 && data.tests.length === 0;
+  const empty = data.weeks.every((w) => w.tonnage === 0 && w.sessions === 0) && data.prs.length === 0 && data.maxes.length === 0 && data.tests.length === 0 && data.wellness.days.length === 0;
 
   if (empty) {
     return (
@@ -173,6 +173,62 @@ export function ProgressView({ data, unit, historyHref }: { data: Data; unit: "k
               );
             })}
           </ul>
+        </Card>
+      )}
+
+      {data.wellness.days.length > 0 && (
+        <Card>
+          <div className="flex items-baseline justify-between gap-3">
+            <h2 className="font-semibold">Check-ins</h2>
+            <p className="text-sm text-muted">last 14 days</p>
+          </div>
+          <div className="mt-3 grid grid-cols-3 gap-3 text-center">
+            <div>
+              <p className="text-2xl font-bold tabular-nums">{data.wellness.avgReadiness == null ? "–" : `${data.wellness.avgReadiness}%`}</p>
+              <p className="text-xs text-muted">avg readiness</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold tabular-nums">{data.wellness.avgSleep == null ? "–" : `${data.wellness.avgSleep} h`}</p>
+              <p className="text-xs text-muted">avg sleep</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold tabular-nums">{data.wellness.latestWeight ? n1(toUnit(data.wellness.latestWeight.kg)) : "–"}</p>
+              <p className="text-xs text-muted">
+                {unit} bodyweight
+                {data.wellness.latestWeight && data.wellness.firstWeight
+                  ? ` (${data.wellness.latestWeight.kg - data.wellness.firstWeight.kg >= 0 ? "+" : "−"}${n1(Math.abs(toUnit(data.wellness.latestWeight.kg - data.wellness.firstWeight.kg)))})`
+                  : ""}
+              </p>
+            </div>
+          </div>
+          <details className="mt-3 text-sm">
+            <summary className="cursor-pointer text-muted">Show every day</summary>
+            <table className="mt-2 w-full tabular-nums">
+              <thead>
+                <tr className="text-left text-xs text-muted">
+                  <th className="py-1 font-normal">Day</th>
+                  <th className="py-1 text-right font-normal">Ready</th>
+                  <th className="py-1 text-right font-normal">Sleep</th>
+                  <th className="py-1 text-right font-normal">Sore</th>
+                  <th className="py-1 text-right font-normal">{unit}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.wellness.days.map((c) => (
+                  <tr key={c.day} className="border-t border-border align-top">
+                    <td className="py-1">
+                      {short(c.day)}
+                      {c.note && <span className="block text-xs text-muted">{c.note}</span>}
+                    </td>
+                    <td className="py-1 text-right">{c.readiness == null ? "–" : `${c.readiness}%`}</td>
+                    <td className="py-1 text-right">{c.sleep_hours == null ? "–" : `${c.sleep_hours} h`}</td>
+                    <td className="py-1 text-right">{c.soreness == null ? "–" : `${c.soreness}/5`}</td>
+                    <td className="py-1 text-right">{c.bodyweight == null ? "–" : n1(toUnit(Number(c.bodyweight)))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </details>
         </Card>
       )}
 

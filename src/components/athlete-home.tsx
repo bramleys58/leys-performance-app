@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Card, SecondaryButton } from "@/components/ui";
 import { startFreeWorkout } from "@/app/(app)/athlete-actions";
 import { getMyAthlete } from "@/lib/athlete";
+import { readiness, type CheckIn } from "@/lib/checkin";
 import { WEEKDAYS, isoWeekday, todayISO, weekRange } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/server";
 
@@ -43,19 +44,44 @@ export async function AthleteHome({ firstName }: { firstName: string }) {
   const weekday = isoWeekday();
   const { monday, sunday } = weekRange(day);
 
-  const [{ data: sessionData }, { data: logData }] = await Promise.all([
+  const [{ data: sessionData }, { data: logData }, { data: checkData }] = await Promise.all([
     supabase
       .from("sessions")
       .select("id, name, kind, weekday, scheduled_date, is_optional, estimated_minutes, position, programs!inner(status, athlete_id), session_exercises(count)")
       .eq("programs.status", "active")
       .eq("programs.athlete_id", athlete.id),
     supabase.from("workout_logs").select("id, session_id, session_name, performed_on, finished_at").eq("athlete_id", athlete.id).gte("performed_on", monday).lte("performed_on", sunday),
+    supabase.from("check_ins").select("*").eq("athlete_id", athlete.id).eq("day", day).maybeSingle(),
   ]);
 
   type S = { id: string; name: string; kind: string; weekday: number | null; scheduled_date: string | null; is_optional: boolean; estimated_minutes: number | null; position: number; session_exercises: { count: number }[] };
   const sessions = ((sessionData ?? []) as unknown as S[]).filter((s) => !s.scheduled_date || (s.scheduled_date >= monday && s.scheduled_date <= sunday));
   const logs = (logData ?? []) as { id: string; session_id: string | null; session_name: string | null; performed_on: string; finished_at: string | null }[];
   const openFree = logs.filter((l) => !l.session_id && !l.finished_at && l.performed_on === day);
+
+  // If the check-in table is not there yet, checkData is simply empty and the card invites a check-in.
+  const checkIn = (checkData ?? null) as CheckIn | null;
+  const ready = checkIn ? readiness(checkIn) : null;
+  const checkInCard = (
+    <Link href="/check-in" className="flex items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3">
+      <div className="min-w-0 flex-1">
+        <p className="font-semibold">Daily check-in</p>
+        <p className="truncate text-sm text-muted">
+          {checkIn
+            ? [checkIn.sleep_hours != null ? `${checkIn.sleep_hours} h sleep` : null, checkIn.bodyweight != null ? "weight logged" : null, "tap to change"].filter(Boolean).join(" · ")
+            : "Sleep, energy, soreness. 20 seconds."}
+        </p>
+      </div>
+      {checkIn ? (
+        <span className="shrink-0 text-right">
+          <span className="block text-lg font-bold tabular-nums">{ready == null ? "✓" : `${ready}%`}</span>
+          {ready != null && <span className="block text-xs text-muted">readiness</span>}
+        </span>
+      ) : (
+        <span className="shrink-0 text-sm font-medium text-accent">Check in →</span>
+      )}
+    </Link>
+  );
 
   const freeWorkout = (
     <div className="space-y-3">
@@ -106,6 +132,7 @@ export async function AthleteHome({ firstName }: { firstName: string }) {
   return (
     <div className="space-y-6">
       {heading}
+      {checkInCard}
 
       {sessions.length === 0 ? (
         <>

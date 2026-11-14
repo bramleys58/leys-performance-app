@@ -6,7 +6,7 @@ Do these once. Menu names in Supabase and Vercel change now and then, so a label
 
 1. Open your project in Supabase and go to **SQL Editor**.
 2. Open `supabase/migrations/0001_init.sql` from this repository, copy everything, paste it in the editor and press **Run**. It should finish with "Success".
-3. Do the same with every other file in `supabase/migrations/`, in number order (`0002_...`, `0003_...`, `0004_...` and any later ones).
+3. Do the same with every other file in `supabase/migrations/`, in number order (`0002_...`, `0003_...`, `0004_...` up to the highest number).
 4. Do the same with `supabase/seed/exercises.sql`. This loads the exercise library (810 exercises). It is safe to run twice.
 
 ## 2. Lock down logins (Supabase)
@@ -55,3 +55,13 @@ Never put the database password or the "secret" / "service role" key in Vercel v
 - Supabase's built-in email sending is limited to a few emails per hour. Fine for testing. Before inviting a full roster, connect an email service (step for later).
 - The free Supabase plan pauses a project after a week without activity. Move to the paid plan before athletes depend on it.
 - From now on every push to the `main` branch on GitHub goes live on Vercel automatically.
+
+## Optional: invite athletes from the app
+
+The **Email an invite** button on an athlete's page needs one extra setting, because sending invites requires admin rights.
+
+1. In Supabase go to **Settings > API Keys** and copy the **secret** key (starts with `sb_secret_`).
+2. In Vercel go to your project, **Settings > Environment Variables**, and add `SUPABASE_SECRET_KEY` with that value. The name must NOT start with `NEXT_PUBLIC_`.
+3. Redeploy (Deployments > the latest one > Redeploy).
+
+This key can do anything in your database. It only ever lives in Vercel and Supabase. Do not paste it in chats, emails or code.

@@ -271,3 +271,51 @@ export async function setWorkoutOrder(ids: string[]): Promise<{ ok: boolean }> {
   const results = await Promise.all(ids.map((id, i) => supabase.from("workout_exercises").update({ position: i }).eq("id", id)));
   return { ok: results.every((r) => !r.error) };
 }
+
+// ----------------------------------------------------------------- check-ins
+
+const KG_PER_LB_CHECKIN = 0.45359237;
+
+/** Saves today's check-in (or replaces it). */
+export async function saveCheckIn(fd: FormData) {
+  const user = await requireUser();
+  const supabase = await createClient();
+  const athlete = await getMyAthlete();
+  const home = user.role === "coach" ? "/me" : "/";
+  if (!athlete) redirect(home);
+
+  const scale = (key: string) => {
+    const n = Number.parseInt(String(fd.get(key) ?? ""), 10);
+    return n >= 1 && n <= 5 ? n : null;
+  };
+  const number = (key: string) => {
+    const raw = String(fd.get(key) ?? "").trim().replace(",", ".");
+    const n = Number(raw);
+    return raw !== "" && Number.isFinite(n) && n >= 0 ? n : null;
+  };
+
+  if (fd.get("consent") === "on") await supabase.rpc("agree_to_check_ins");
+
+  const sleep = number("sleep_hours");
+  const weight = number("bodyweight");
+  const note = String(fd.get("note") ?? "").trim();
+  const { error } = await supabase.from("check_ins").upsert(
+    {
+      athlete_id: athlete.id,
+      day: todayISO(),
+      sleep_hours: sleep != null && sleep <= 24 ? sleep : null,
+      sleep_quality: scale("sleep_quality"),
+      energy: scale("energy"),
+      soreness: scale("soreness"),
+      stress: scale("stress"),
+      bodyweight: weight == null || weight === 0 ? null : Math.round((athlete.unit === "lbs" ? weight * KG_PER_LB_CHECKIN : weight) * 100) / 100,
+      note: note ? note.slice(0, 500) : null,
+    },
+    { onConflict: "athlete_id,day" },
+  );
+  if (error) redirect("/check-in?error=1");
+
+  revalidatePath("/");
+  revalidatePath("/me");
+  redirect(home);
+}

@@ -38,8 +38,8 @@ export default async function SessionEditorPage({ params, searchParams }: PagePr
           const group = (r.superset_group ?? "").toUpperCase();
           const color = SUPERSET_COLORS[group[0]] ?? "var(--border)";
           return (
-            <div key={r.id} className="rounded-2xl border border-border bg-surface p-3" style={{ borderLeft: `4px solid ${color}` }}>
-              <div className="flex items-center gap-2">
+            <div key={r.id} className="rounded-2xl border border-border bg-surface p-3 lg:flex lg:flex-wrap lg:items-end lg:gap-x-3" style={{ borderLeft: `4px solid ${color}` }}>
+              <div className="flex items-center gap-2 lg:w-[36%] lg:pb-0.5">
                 <span className="w-8 shrink-0 text-center text-sm font-bold" style={{ color: group ? color : undefined }}>
                   {labels[r.id] ?? i + 1}
                 </span>
@@ -48,7 +48,7 @@ export default async function SessionEditorPage({ params, searchParams }: PagePr
                 <ActionButton formAction={rowOp.bind(null, "down", r.id)} aria-label="Move down" className="rounded-lg border border-border px-2.5 py-2 text-sm">↓</ActionButton>
                 <ActionButton formAction={rowOp.bind(null, "delete", r.id)} aria-label="Remove exercise" className="rounded-lg border border-border px-2.5 py-2 text-sm text-accent">✕</ActionButton>
               </div>
-              <div className="mt-2 grid grid-cols-4 gap-2">
+              <div className="mt-2 grid grid-cols-4 gap-2 lg:mt-0 lg:w-[27%]">
                 <label className="text-xs text-muted">
                   Superset
                   <input name={`superset_group__${r.id}`} defaultValue={r.superset_group ?? ""} maxLength={2} placeholder="A" className={small} />
@@ -66,7 +66,7 @@ export default async function SessionEditorPage({ params, searchParams }: PagePr
                   <input name={`tempo__${r.id}`} defaultValue={r.tempo ?? ""} className={small} />
                 </label>
               </div>
-              <div className="mt-2 grid grid-cols-[1fr_1fr_auto] items-end gap-2">
+              <div className="mt-2 grid grid-cols-[1fr_1fr_auto] items-end gap-2 lg:mt-0 lg:min-w-0 lg:flex-1">
                 <label className="text-xs text-muted">
                   Target
                   <select name={`target_type__${r.id}`} defaultValue={r.target_type} className={small}>
@@ -84,11 +84,11 @@ export default async function SessionEditorPage({ params, searchParams }: PagePr
                   <input type="checkbox" name={`ask_rpe__${r.id}`} defaultChecked={r.ask_rpe} /> Ask RPE
                 </label>
               </div>
-              <label className="mt-2 block text-xs text-muted">
+              <label className="mt-2 block text-xs text-muted lg:w-[62%]">
                 Coaching note
                 <textarea name={`coaching_note__${r.id}`} defaultValue={r.coaching_note ?? ""} rows={2} className={small} />
               </label>
-              <label className="mt-2 block text-xs text-muted">
+              <label className="mt-2 block text-xs text-muted lg:min-w-0 lg:flex-1">
                 Video link (leave empty to use the library video)
                 <input name={`video_url__${r.id}`} defaultValue={r.video_url ?? ""} inputMode="url" className={small} />
               </label>
@@ -121,7 +121,7 @@ export default async function SessionEditorPage({ params, searchParams }: PagePr
   );
 
   return (
-    <div className="space-y-5">
+    <div className="page-wide space-y-5">
       <BackLink href={`/programs/${programId}`}>{programName}</BackLink>
       <h1 className="text-2xl font-bold">{session.name}</h1>
       {sp.saved && <Notice kind="ok">Saved.</Notice>}
@@ -140,8 +140,10 @@ export default async function SessionEditorPage({ params, searchParams }: PagePr
             {section("prep", "PREP CIRCUIT")}
             {section("workout", session.kind === "routine" ? "ROUTINE" : "WORKOUT")}
           </form>
-          {addForm("prep", "Add to prep circuit")}
-          {addForm("workout", session.kind === "routine" ? "Add to routine" : "Add to workout")}
+          <div className="grid gap-5 lg:grid-cols-2">
+            {addForm("prep", "Add to prep circuit")}
+            {addForm("workout", session.kind === "routine" ? "Add to routine" : "Add to workout")}
+          </div>
         </>
       )}
 

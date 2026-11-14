@@ -50,7 +50,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   return (
     <>
       <AppMenu sections={sections} name={name} role={user.role === "coach" ? "Coach" : "Athlete"} />
-      <main className="mx-auto w-full max-w-3xl flex-1 px-5 py-6">{children}</main>
+      <main className="mx-auto w-full max-w-3xl flex-1 px-5 py-6 has-[.page-wide]:lg:max-w-6xl">{children}</main>
     </>
   );
 }

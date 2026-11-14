@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { ActionButton, BackLink, Card, Field, Notice, SecondaryButton, Select, inputClass } from "@/components/ui";
 import { requireCoach } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { copyProgram, createProgram, updateAthlete } from "../../coach-actions";
+import { copyProgram, createProgram, inviteAthlete, updateAthlete } from "../../coach-actions";
 import { startFreeWorkout } from "../../athlete-actions";
 
 export default async function AthletePage({ params, searchParams }: PageProps<"/athletes/[id]">) {
@@ -32,6 +32,7 @@ export default async function AthletePage({ params, searchParams }: PageProps<"/
       <BackLink href="/athletes">Athletes</BackLink>
       <h1 className="text-2xl font-bold">{athlete.full_name}</h1>
       {sp.saved && <Notice kind="ok">Saved.</Notice>}
+      {sp.invited && <Notice kind="ok">Invite sent. The athlete gets an email with a link to set a password.</Notice>}
       {typeof sp.error === "string" && <Notice kind="error">{sp.error}</Notice>}
 
       <Card>
@@ -163,11 +164,18 @@ export default async function AthletePage({ params, searchParams }: PageProps<"/
             {athlete.user_id
               ? "This athlete has a login."
               : athlete.email
-                ? "No login yet. Invite this email address from Supabase (Authentication, Users, Invite) and it links automatically."
+                ? "No login yet. Send an invite with the button below."
                 : "No login. Add an email address first if they should log in themselves."}
           </p>
           <SecondaryButton type="submit">Save profile</SecondaryButton>
         </form>
+        {!athlete.user_id && athlete.email && (
+          <form action={inviteAthlete.bind(null, athlete.id)} className="mt-3">
+            <ActionButton pendingLabel="Sending…" className="w-full rounded-xl border border-accent/60 px-4 py-3 text-base font-medium text-accent">
+              Email an invite to {athlete.email}
+            </ActionButton>
+          </form>
+        )}
       </Card>
     </div>
   );

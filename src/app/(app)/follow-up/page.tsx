@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Card } from "@/components/ui";
 import { requireCoach } from "@/lib/auth";
+import { flags as checkFlags, readiness, type CheckIn } from "@/lib/checkin";
 import { WEEKDAYS, isoWeekday, todayISO, weekRange } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/server";
 
@@ -14,10 +15,11 @@ export default async function FollowUpPage() {
   const { monday, sunday } = weekRange(day);
   const twoWeeksAgo = new Date(new Date(day + "T12:00:00Z").getTime() - 14 * 86400000).toISOString().slice(0, 10);
 
-  const [{ data: athletes }, { data: sessions }, { data: logs }] = await Promise.all([
+  const [{ data: athletes }, { data: sessions }, { data: logs }, { data: checks }] = await Promise.all([
     supabase.from("athletes").select("id, full_name, sport").eq("status", "active").order("full_name"),
     supabase.from("sessions").select("id, name, weekday, kind, is_optional, programs!inner(athlete_id, status)").eq("programs.status", "active"),
     supabase.from("workout_logs").select("id, athlete_id, session_id, session_name, performed_on, finished_at, session_rpe, comment, set_logs(count)").gte("performed_on", twoWeeksAgo).order("performed_on", { ascending: false }),
+    supabase.from("check_ins").select("*").eq("day", day),
   ]);
 
   type S = { id: string; name: string; weekday: number | null; kind: string; is_optional: boolean; programs: { athlete_id: string } };
@@ -38,7 +40,9 @@ export default async function FollowUpPage() {
     if (last?.session_rpe != null && last.session_rpe >= 9) flags.push(`last session RPE ${last.session_rpe}`);
     if (planned.length > 0 && mine.length === 0) flags.push("nothing logged in 14 days");
     const comment = thisWeek.find((l) => l.comment)?.comment ?? null;
-    return { a, planned: planned.length, done, missed, last, flags, comment };
+    const check = ((checks ?? []) as (CheckIn & { athlete_id: string })[]).find((c) => c.athlete_id === a.id) ?? null;
+    if (check) flags.push(...checkFlags(check));
+    return { a, planned: planned.length, done, missed, last, flags, comment, check };
   });
 
   const active = rows.filter((r) => r.planned > 0);
@@ -49,7 +53,7 @@ export default async function FollowUpPage() {
       <div>
         <h1 className="text-2xl font-bold">Follow-up</h1>
         <p className="mt-1 text-sm text-muted">
-          This week, {monday} to {sunday}. {trained} of {active.length} athletes with a program have trained.
+          This week, {monday} to {sunday}. {trained} of {active.length} athletes with a program have trained. {(checks ?? []).length} checked in today.
         </p>
       </div>
 
@@ -77,6 +81,19 @@ export default async function FollowUpPage() {
                   Not done yet: {r.missed.map((s) => `${s.name} (${WEEKDAYS[(s.weekday ?? 1) - 1].slice(0, 3)})`).join(", ")}
                 </p>
               )}
+              {r.check && (
+                <p className="mt-1 text-sm text-muted">
+                  Check-in today:{" "}
+                  {[
+                    readiness(r.check) != null ? `readiness ${readiness(r.check)}%` : null,
+                    r.check.sleep_hours != null ? `${r.check.sleep_hours} h sleep` : null,
+                    r.check.soreness != null ? `soreness ${r.check.soreness}/5` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ") || "done"}
+                </p>
+              )}
+              {r.check?.note && <p className="mt-2 rounded-xl bg-surface-2 px-3 py-2 text-sm">Check-in note: {r.check.note}</p>}
               {r.flags.length > 0 && <p className="mt-1 text-sm text-accent">{r.flags.join(" · ")}</p>}
               {r.comment && <p className="mt-2 rounded-xl bg-surface-2 px-3 py-2 text-sm">“{r.comment}”</p>}
             </Link>

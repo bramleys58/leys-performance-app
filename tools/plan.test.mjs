@@ -25,3 +25,11 @@ assert.equal(readiness({ sleep_quality: 4, energy: null, soreness: null, stress:
 assert.equal(readiness({ sleep_quality: null, energy: null, soreness: null, stress: null }), null);
 assert.deepEqual(flags({ day: "x", sleep_hours: 5.5, sleep_quality: 3, energy: 2, soreness: 4, stress: 2, bodyweight: null, note: null }), ["slept 5.5 h", "very sore", "low energy"]);
 console.log("checkin.ts: all checks passed");
+
+// weekly check-in target week (15 Nov 2026 is a Sunday)
+const { weeklyTarget } = await import("../src/lib/weekly.ts");
+assert.deepEqual(weeklyTarget("2026-11-15", 7), { weekStart: "2026-11-09", weekEnd: "2026-11-15", due: true, isSunday: true });
+assert.deepEqual(weeklyTarget("2026-11-16", 1), { weekStart: "2026-11-09", weekEnd: "2026-11-15", due: true, isSunday: false });
+assert.deepEqual(weeklyTarget("2026-11-17", 2), { weekStart: "2026-11-09", weekEnd: "2026-11-15", due: true, isSunday: false });
+assert.deepEqual(weeklyTarget("2026-11-18", 3), { weekStart: "2026-11-16", weekEnd: "2026-11-22", due: false, isSunday: false });
+console.log("weekly.ts: all checks passed");

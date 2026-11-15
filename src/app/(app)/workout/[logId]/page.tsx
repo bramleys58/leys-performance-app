@@ -128,7 +128,8 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
     const done = sets.filter((s) => !s.skipped);
     const factor = athlete.unit === "lbs" ? 1 / KG_PER_LB : 1;
     const tonnage = done.reduce((t, s) => t + (s.weight && s.reps ? Number(s.weight) * s.reps : 0), 0) * factor;
-    const minutes = log.started_at ? Math.max(1, Math.round((new Date(log.finished_at).getTime() - new Date(log.started_at).getTime()) / 60000)) : null;
+    const timed = log.started_at ? Math.max(1, Math.round((new Date(log.finished_at).getTime() - new Date(log.started_at).getTime()) / 60000)) : null;
+    const minutes: number | null = log.duration_minutes ?? (timed != null && timed <= 360 ? timed : null);
 
     // PRs: best estimated 1RM per exercise in this workout against everything logged before it.
     const todayBest = new Map<string, { name: string; e1rm: number; weight: number; reps: number }>();
@@ -222,13 +223,14 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
       unit={athlete.unit}
       sessionName={log.session_name ?? "Workout"}
       athleteName={forClient ? athlete.full_name : null}
-      startedAt={log.started_at}
+      startedAt={log.duration_minutes == null ? log.started_at : null}
       rows={loggerRows}
       initialLogged={logged}
       backHref={backHref}
       isFree={isFree}
       performedOn={log.performed_on}
       isCoach={user.role === "coach"}
+      savedMinutes={log.duration_minutes ?? null}
     />
   );
 }

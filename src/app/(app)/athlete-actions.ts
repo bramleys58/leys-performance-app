@@ -111,11 +111,14 @@ export async function finishWorkout(fd: FormData) {
   const comment = String(fd.get("comment") ?? "").trim();
   const felt = String(fd.get("felt") ?? "").trim();
   const name = String(fd.get("session_name") ?? "").trim();
+  const typed = Number.parseInt(String(fd.get("duration_minutes") ?? ""), 10);
+  const duration = typed >= 1 && typed <= 1440 ? typed : null;
 
   await supabase
     .from("workout_logs")
     .update({
       finished_at: new Date().toISOString(),
+      duration_minutes: duration,
       session_rpe: rpe >= 1 && rpe <= 10 ? rpe : null,
       felt: felt || null,
       comment: comment || null,
@@ -318,4 +321,48 @@ export async function saveCheckIn(fd: FormData) {
   revalidatePath("/");
   revalidatePath("/me");
   redirect(home);
+}
+
+// ----------------------------------------------------------- weekly check-in
+
+export async function saveWeeklyCheckIn(fd: FormData) {
+  const user = await requireUser();
+  const supabase = await createClient();
+  const athlete = await getMyAthlete();
+  const home = user.role === "coach" ? "/me" : "/";
+  if (!athlete) redirect(home);
+
+  const weekStart = String(fd.get("week_start") ?? "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) redirect("/weekly?error=1");
+  const scale = (key: string) => {
+    const n = Number.parseInt(String(fd.get(key) ?? ""), 10);
+    return n >= 1 && n <= 5 ? n : null;
+  };
+  const words = (key: string) => {
+    const v = String(fd.get(key) ?? "").trim();
+    return v ? v.slice(0, 1000) : null;
+  };
+
+  if (fd.get("consent") === "on") await supabase.rpc("agree_to_check_ins");
+
+  const { error } = await supabase.from("weekly_check_ins").upsert(
+    {
+      athlete_id: athlete.id,
+      week_start: weekStart,
+      training: scale("training"),
+      nutrition: scale("nutrition"),
+      recovery: scale("recovery"),
+      stress: scale("stress"),
+      win: words("win"),
+      struggle: words("struggle"),
+      pain: words("pain"),
+      message: words("message"),
+    },
+    { onConflict: "athlete_id,week_start" },
+  );
+  if (error) redirect("/weekly?error=1");
+
+  revalidatePath("/");
+  revalidatePath("/me");
+  redirect(home + "?weekly=1");
 }

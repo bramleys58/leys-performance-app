@@ -23,6 +23,7 @@ type Props = {
   isFree: boolean;
   performedOn: string;
   isCoach: boolean;
+  savedMinutes: number | null;
 };
 
 type Field = "weight" | "reps" | "seconds" | "distance" | "rpe";
@@ -370,13 +371,17 @@ export function Logger(props: Props) {
   useEffect(() => {
     const update = () => setNow(Date.now());
     const first = setTimeout(update, 0);
-    const every = setInterval(update, 15000);
+    const every = setInterval(update, 1000);
     return () => {
       clearTimeout(first);
       clearInterval(every);
     };
   }, []);
-  const minutes = props.startedAt && now ? Math.max(0, Math.floor((now - new Date(props.startedAt).getTime()) / 60000)) : null;
+  const elapsed = props.startedAt && now ? Math.max(0, Math.floor((now - new Date(props.startedAt).getTime()) / 1000)) : null;
+  const minutes = elapsed == null ? null : Math.floor(elapsed / 60);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  // Past six hours the clock is clearly left running: stop showing it.
+  const clock = elapsed == null || elapsed > 6 * 3600 ? null : elapsed >= 3600 ? `${Math.floor(elapsed / 3600)}:${pad(Math.floor((elapsed % 3600) / 60))}:${pad(elapsed % 60)}` : `${pad(Math.floor(elapsed / 60))}:${pad(elapsed % 60)}`;
 
   const total = rows.reduce((t, r) => t + setCount(r), 0);
   const doneCount = logged.size;
@@ -386,8 +391,15 @@ export function Logger(props: Props) {
     <div className="sticky top-[49px] z-10 -mx-5 space-y-2 border-b border-border bg-bg/95 px-5 py-3 backdrop-blur">
       <div className="flex items-center justify-between text-sm text-muted">
         <a href={props.backHref}>← Leave</a>
-        <span className="tabular-nums">
-          {doneCount}/{total} sets{minutes != null ? ` · ${minutes} min` : ""}
+        <span className="flex items-center gap-2 tabular-nums">
+          {clock && (
+            <span className="rounded-md bg-surface-2 px-2 py-0.5 font-semibold text-text" aria-label={`Workout time ${clock}`}>
+              ⏱ {clock}
+            </span>
+          )}
+          <span>
+            {doneCount}/{total} sets
+          </span>
         </span>
         <button type="button" onClick={() => setView(view === "finish" ? "log" : "finish")} className="rounded-lg bg-ok px-3 py-1.5 font-semibold text-white">
           {view === "finish" ? "Back" : "Finish"}
@@ -426,6 +438,17 @@ export function Logger(props: Props) {
               <input name="session_name" defaultValue={props.sessionName} maxLength={80} className="w-full rounded-xl border border-border bg-surface-2 px-4 py-3 outline-none focus:border-accent" />
             </label>
           )}
+          <label className="block">
+            <span className="mb-1.5 block text-sm text-muted">
+              {props.savedMinutes != null ? "Duration in minutes" : minutes != null && clock ? "Duration in minutes (from the timer, change it if it is off)" : "How long did it take? Minutes (optional)"}
+            </span>
+            <input
+              name="duration_minutes"
+              inputMode="numeric"
+              defaultValue={props.savedMinutes ?? (minutes != null && clock ? Math.max(1, minutes) : "")}
+              className="w-full rounded-xl border border-border bg-surface-2 px-4 py-3 outline-none focus:border-accent"
+            />
+          </label>
           <div>
             <p className="mb-2 text-sm text-muted">How hard was the session? (1 easy, 10 maximal)</p>
             <div className="grid grid-cols-5 gap-2">

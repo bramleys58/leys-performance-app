@@ -25,6 +25,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
                   title: "My training",
                   links: [
                     { href: "/me", label: "Today", icon: "💪" },
+                    { href: "/calendar", label: "Calendar", icon: "📅" },
                     { href: "/progress", label: "My progress", icon: "📈" },
                     { href: "/history", label: "Workout history", icon: "🕘" },
                   ],
@@ -38,6 +39,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
             title: "Training",
             links: [
               { href: "/", label: "Today", icon: "💪" },
+              { href: "/calendar", label: "Calendar", icon: "📅" },
               { href: "/progress", label: "My progress", icon: "📈" },
               { href: "/history", label: "Workout history", icon: "🕘" },
             ],

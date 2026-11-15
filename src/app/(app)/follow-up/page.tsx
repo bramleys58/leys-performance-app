@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { Card } from "@/components/ui";
+import { WeeklyAnswers } from "@/components/weekly-answers";
 import { requireCoach } from "@/lib/auth";
+import { weekLabel, weeklyTarget, type WeeklyCheckIn } from "@/lib/weekly";
 import { flags as checkFlags, readiness, type CheckIn } from "@/lib/checkin";
 import { WEEKDAYS, isoWeekday, todayISO, weekRange } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/server";
@@ -15,15 +17,18 @@ export default async function FollowUpPage() {
   const { monday, sunday } = weekRange(day);
   const twoWeeksAgo = new Date(new Date(day + "T12:00:00Z").getTime() - 14 * 86400000).toISOString().slice(0, 10);
 
-  const [{ data: athletes }, { data: sessions }, { data: logs }, { data: checks }] = await Promise.all([
+  // The most recent finished week from Monday to Tuesday, the current week after that.
+  const target = weeklyTarget(day, weekday);
+  const [{ data: athletes }, { data: sessions }, { data: logs }, { data: checks }, { data: weeklies }] = await Promise.all([
     supabase.from("athletes").select("id, full_name, sport").eq("status", "active").order("full_name"),
     supabase.from("sessions").select("id, name, weekday, kind, is_optional, programs!inner(athlete_id, status)").eq("programs.status", "active"),
-    supabase.from("workout_logs").select("id, athlete_id, session_id, session_name, performed_on, finished_at, session_rpe, comment, set_logs(count)").gte("performed_on", twoWeeksAgo).order("performed_on", { ascending: false }),
+    supabase.from("workout_logs").select("id, athlete_id, session_id, session_name, performed_on, finished_at, session_rpe, duration_minutes, comment, set_logs(count)").gte("performed_on", twoWeeksAgo).order("performed_on", { ascending: false }),
     supabase.from("check_ins").select("*").eq("day", day),
+  supabase.from("weekly_check_ins").select("*").eq("week_start", target.weekStart).order("created_at", { ascending: false }),
   ]);
 
   type S = { id: string; name: string; weekday: number | null; kind: string; is_optional: boolean; programs: { athlete_id: string } };
-  type L = { id: string; athlete_id: string; session_id: string | null; session_name: string | null; performed_on: string; finished_at: string | null; session_rpe: number | null; comment: string | null; set_logs: { count: number }[] };
+  type L = { id: string; athlete_id: string; session_id: string | null; session_name: string | null; performed_on: string; finished_at: string | null; session_rpe: number | null; duration_minutes: number | null; comment: string | null; set_logs: { count: number }[] };
   const allSessions = (sessions ?? []) as unknown as S[];
   const allLogs = ((logs ?? []) as unknown as L[]).filter((l) => l.finished_at || (l.set_logs?.[0]?.count ?? 0) > 0);
 
@@ -57,6 +62,16 @@ export default async function FollowUpPage() {
         </p>
       </div>
 
+      {((weeklies ?? []) as WeeklyCheckIn[]).length > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-xs font-semibold tracking-[0.2em] text-muted">WEEKLY CHECK-INS · {weekLabel(target.weekStart).toUpperCase()}</h2>
+          {((weeklies ?? []) as WeeklyCheckIn[]).map((w) => (
+            <WeeklyAnswers key={w.id} c={w} name={(athletes ?? []).find((a) => a.id === w.athlete_id)?.full_name ?? "Athlete"} />
+          ))}
+          <h2 className="pt-2 text-xs font-semibold tracking-[0.2em] text-muted">TRAINING THIS WEEK</h2>
+        </section>
+      )}
+
       {rows.length === 0 && (
         <Card>
           <p className="text-sm text-muted">No active athletes yet.</p>
@@ -74,7 +89,7 @@ export default async function FollowUpPage() {
                 </p>
               </div>
               <p className="mt-1 text-sm text-muted">
-                {r.last ? `Last: ${r.last.session_name ?? "workout"} on ${r.last.performed_on}${r.last.session_rpe ? `, RPE ${r.last.session_rpe}` : ""}` : "No workouts in the last 14 days"}
+                {r.last ? `Last: ${r.last.session_name ?? "workout"} on ${r.last.performed_on}${r.last.duration_minutes ? `, ${r.last.duration_minutes} min` : ""}${r.last.session_rpe ? `, RPE ${r.last.session_rpe}` : ""}` : "No workouts in the last 14 days"}
               </p>
               {r.missed.length > 0 && (
                 <p className="mt-1 text-sm text-muted">

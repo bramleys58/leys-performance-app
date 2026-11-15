@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ActionButton, BackLink, Card, Field, Notice, SecondaryButton, Select, inputClass } from "@/components/ui";
+import { WeeklyAnswers } from "@/components/weekly-answers";
 import { requireCoach } from "@/lib/auth";
+import type { WeeklyCheckIn } from "@/lib/weekly";
 import { createClient } from "@/lib/supabase/server";
 import { copyProgram, createProgram, inviteAthlete, updateAthlete } from "../../coach-actions";
 import { startFreeWorkout } from "../../athlete-actions";
@@ -20,11 +22,12 @@ export default async function AthletePage({ params, searchParams }: PageProps<"/
   if (!athlete) notFound();
 
   const activeIds = (programs ?? []).filter((p) => p.status === "active").map((p) => p.id);
-  const [{ data: liveSessions }, { data: recentLogs }] = await Promise.all([
+  const [{ data: liveSessions }, { data: recentLogs }, { data: weeklies }] = await Promise.all([
     activeIds.length
       ? supabase.from("sessions").select("id, name, kind, weekday").in("program_id", activeIds).neq("kind", "slot").order("weekday", { nullsFirst: false }).order("position")
       : Promise.resolve({ data: [] as { id: string; name: string; kind: string; weekday: number | null }[] }),
-    supabase.from("workout_logs").select("id, session_name, performed_on, finished_at, session_rpe").eq("athlete_id", id).order("performed_on", { ascending: false }).limit(8),
+    supabase.from("workout_logs").select("id, session_name, performed_on, finished_at, session_rpe, duration_minutes").eq("athlete_id", id).order("performed_on", { ascending: false }).limit(8),
+    supabase.from("weekly_check_ins").select("*").eq("athlete_id", id).order("week_start", { ascending: false }).limit(4),
   ]);
 
   return (
@@ -53,7 +56,11 @@ export default async function AthletePage({ params, searchParams }: PageProps<"/
         </div>
       </Card>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-3">
+        <Link href={`/athletes/${athlete.id}/calendar`} className="rounded-2xl border border-border bg-surface px-4 py-4">
+          <span className="block font-semibold">Calendar</span>
+          <span className="block text-sm text-muted">Planned and done</span>
+        </Link>
         <Link href={`/athletes/${athlete.id}/progress`} className="rounded-2xl border border-border bg-surface px-4 py-4">
           <span className="block font-semibold">Progress</span>
           <span className="block text-sm text-muted">Volume, records, tests</span>
@@ -76,13 +83,22 @@ export default async function AthletePage({ params, searchParams }: PageProps<"/
                   <span className="ml-2 text-muted">{l.performed_on}</span>
                 </span>
                 <span className={l.finished_at ? "text-ok" : "text-muted"}>
-                  {l.finished_at ? `done${l.session_rpe ? ` · RPE ${l.session_rpe}` : ""}` : "in progress"}
+                  {l.finished_at ? `done${l.duration_minutes ? ` · ${l.duration_minutes} min` : ""}${l.session_rpe ? ` · RPE ${l.session_rpe}` : ""}` : "in progress"}
                 </span>
               </Link>
             </li>
           ))}
         </ul>
       </Card>
+
+      {((weeklies ?? []) as WeeklyCheckIn[]).length > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-xs font-semibold tracking-[0.2em] text-muted">WEEKLY CHECK-INS</h2>
+          {((weeklies ?? []) as WeeklyCheckIn[]).map((w) => (
+            <WeeklyAnswers key={w.id} c={w} />
+          ))}
+        </section>
+      )}
 
       <Card>
         <h2 className="font-semibold">Programs</h2>

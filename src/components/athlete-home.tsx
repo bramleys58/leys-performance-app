@@ -3,6 +3,8 @@ import { Card, SecondaryButton } from "@/components/ui";
 import { startFreeWorkout } from "@/app/(app)/athlete-actions";
 import { getMyAthlete } from "@/lib/athlete";
 import { readiness, type CheckIn } from "@/lib/checkin";
+import { weekLabel, weeklyTarget } from "@/lib/weekly";
+import { WeeklyPrompt } from "@/components/weekly-prompt";
 import { WEEKDAYS, isoWeekday, todayISO, weekRange } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/server";
 
@@ -44,7 +46,8 @@ export async function AthleteHome({ firstName }: { firstName: string }) {
   const weekday = isoWeekday();
   const { monday, sunday } = weekRange(day);
 
-  const [{ data: sessionData }, { data: logData }, { data: checkData }] = await Promise.all([
+  const weekly = weeklyTarget(day, weekday);
+  const [{ data: sessionData }, { data: logData }, { data: checkData }, { data: weeklyData }] = await Promise.all([
     supabase
       .from("sessions")
       .select("id, name, kind, weekday, scheduled_date, is_optional, estimated_minutes, position, programs!inner(status, athlete_id), session_exercises(count)")
@@ -52,6 +55,7 @@ export async function AthleteHome({ firstName }: { firstName: string }) {
       .eq("programs.athlete_id", athlete.id),
     supabase.from("workout_logs").select("id, session_id, session_name, performed_on, finished_at").eq("athlete_id", athlete.id).gte("performed_on", monday).lte("performed_on", sunday),
     supabase.from("check_ins").select("*").eq("athlete_id", athlete.id).eq("day", day).maybeSingle(),
+  supabase.from("weekly_check_ins").select("id").eq("athlete_id", athlete.id).eq("week_start", weekly.weekStart).maybeSingle(),
   ]);
 
   type S = { id: string; name: string; kind: string; weekday: number | null; scheduled_date: string | null; is_optional: boolean; estimated_minutes: number | null; position: number; session_exercises: { count: number }[] };
@@ -82,6 +86,18 @@ export async function AthleteHome({ firstName }: { firstName: string }) {
       )}
     </Link>
   );
+
+  const weeklyDone = Boolean(weeklyData);
+  const weeklyCard =
+    weekly.due && !weeklyDone ? (
+      <Link href="/weekly" className="flex items-center gap-3 rounded-2xl border border-accent bg-accent/10 px-4 py-4">
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold">Weekly check-in</p>
+          <p className="truncate text-sm text-muted">Week of {weekLabel(weekly.weekStart)} · 2 minutes</p>
+        </div>
+        <span className="shrink-0 text-sm font-medium text-accent">Start →</span>
+      </Link>
+    ) : null;
 
   const freeWorkout = (
     <div className="space-y-3">
@@ -132,6 +148,8 @@ export async function AthleteHome({ firstName }: { firstName: string }) {
   return (
     <div className="space-y-6">
       {heading}
+      {weekly.isSunday && !weeklyDone && <WeeklyPrompt weekLabel={weekLabel(weekly.weekStart)} />}
+      {weeklyCard}
       {checkInCard}
 
       {sessions.length === 0 ? (
@@ -161,6 +179,9 @@ export async function AthleteHome({ firstName }: { firstName: string }) {
       )}
 
       <div className="flex justify-center gap-6 text-sm text-muted">
+        <Link href="/calendar" className="underline">
+          Calendar
+        </Link>
         <Link href="/progress" className="underline">
           My progress
         </Link>

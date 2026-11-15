@@ -14,7 +14,7 @@ export default async function HistoryPage() {
   const { data: logs } = athlete
     ? await supabase
         .from("workout_logs")
-        .select("id, session_name, performed_on, finished_at, session_rpe, set_logs(count)")
+        .select("id, session_name, performed_on, finished_at, session_rpe, duration_minutes, set_logs(count)")
         .eq("athlete_id", athlete.id)
         .order("performed_on", { ascending: false })
         .limit(60)
@@ -40,7 +40,7 @@ export default async function HistoryPage() {
                   <span>
                     <span className="block font-medium">{l.session_name ?? "Workout"}</span>
                     <span className="block text-sm text-muted">
-                      {fmt(l.performed_on)} · {sets} sets{l.session_rpe ? ` · RPE ${l.session_rpe}` : ""}
+                      {fmt(l.performed_on)} · {sets} sets{l.duration_minutes ? ` · ${l.duration_minutes} min` : ""}{l.session_rpe ? ` · RPE ${l.session_rpe}` : ""}
                     </span>
                   </span>
                   <span className={`text-sm ${l.finished_at ? "text-ok" : "text-muted"}`}>{l.finished_at ? "✓" : "in progress"}</span>

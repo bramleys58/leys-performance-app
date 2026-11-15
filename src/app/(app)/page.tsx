@@ -17,7 +17,7 @@ async function CoachHome({ firstName }: { firstName: string }) {
   const [athletes, exercises, review, programs, pending, unread, todays, todayLogs, checked] = await Promise.all([
     supabase.from("athletes").select("id", { count: "exact", head: true }).eq("status", "active"),
     supabase.from("exercises").select("id", { count: "exact", head: true }).eq("archived", false),
-    supabase.from("exercises").select("id", { count: "exact", head: true }).eq("needs_review", true),
+    supabase.from("exercises").select("id", { count: "exact", head: true }).eq("needs_review", true).eq("archived", false).or("review_note.is.null,review_note.not.ilike.*automatically*"),
     supabase.from("programs").select("id", { count: "exact", head: true }).eq("status", "active"),
     supabase.from("exercises").select("id", { count: "exact", head: true }).eq("approved", false),
     supabase.from("weekly_check_ins").select("id", { count: "exact", head: true }).is("coach_seen_at", null),
@@ -47,7 +47,7 @@ async function CoachHome({ firstName }: { firstName: string }) {
     { label: "Active athletes", value: athletes.count ?? 0, href: "/athletes" },
     { label: "Active programs", value: programs.count ?? 0 },
     { label: "Exercises", value: exercises.count ?? 0, href: "/library" },
-    { label: "Exercises to review", value: review.count ?? 0, href: "/library?review=1" },
+    { label: "Exercises to check", value: review.count ?? 0, href: "/library?review=check" },
   ];
 
   return (

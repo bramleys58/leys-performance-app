@@ -26,7 +26,8 @@ export default async function LibraryPage({ searchParams }: PageProps<"/library"
   const params = await searchParams;
   const q = one(params.q).trim();
   const pattern = one(params.pattern);
-  const review = one(params.review) === "1";
+  // "check" = marks worth a look (duplicates, video choices, new ones). "1" = every mark.
+  const review = one(params.review) === "check" ? "check" : one(params.review) === "1" ? "1" : "";
   const novideo = one(params.novideo) === "1";
   const pending = one(params.pending) === "1";
   const page = Math.max(1, Number.parseInt(one(params.page) || "1", 10) || 1);
@@ -35,7 +36,7 @@ export default async function LibraryPage({ searchParams }: PageProps<"/library"
 
   let query = supabase
     .from("exercises")
-    .select("id, name, aliases, movement_pattern, equipment, tracking_type, video_url, needs_review, approved", {
+    .select("id, name, aliases, movement_pattern, equipment, tracking_type, video_url, needs_review, review_note, approved", {
       count: "exact",
     })
     .eq("archived", false)
@@ -47,6 +48,7 @@ export default async function LibraryPage({ searchParams }: PageProps<"/library"
   if (term) query = query.ilike("name", `%${term}%`);
   if (pattern) query = query.eq("movement_pattern", pattern);
   if (review) query = query.eq("needs_review", true);
+  if (review === "check") query = query.or("review_note.is.null,review_note.not.ilike.*automatically*");
   if (novideo) query = query.is("video_url", null);
   if (pending) query = query.eq("approved", false);
 
@@ -63,7 +65,7 @@ export default async function LibraryPage({ searchParams }: PageProps<"/library"
     const sp = new URLSearchParams();
     if (q) sp.set("q", q);
     if (pattern) sp.set("pattern", pattern);
-    if (review) sp.set("review", "1");
+    if (review) sp.set("review", review);
     if (novideo) sp.set("novideo", "1");
     if (pending) sp.set("pending", "1");
     if (p > 1) sp.set("page", String(p));
@@ -101,8 +103,13 @@ export default async function LibraryPage({ searchParams }: PageProps<"/library"
         <ActionButton className="rounded-xl bg-accent px-5 py-3 font-semibold text-accent-text">Search</ActionButton>
         <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted sm:col-span-3">
           <label className="flex items-center gap-2">
-            <input type="checkbox" name="review" value="1" defaultChecked={review} /> Needs review
+            <input type="checkbox" name="review" value={review || "check"} defaultChecked={!!review} /> {review === "1" ? "Every review mark" : "To check (duplicates, video choices)"}
           </label>
+          {review === "check" && (
+            <Link href="/library?review=1" className="underline">
+              Also show guessed pattern and equipment
+            </Link>
+          )}
           <label className="flex items-center gap-2">
             <input type="checkbox" name="novideo" value="1" defaultChecked={novideo} /> No video
           </label>
@@ -136,6 +143,7 @@ export default async function LibraryPage({ searchParams }: PageProps<"/library"
                   e.needs_review && <span className="ml-2 align-middle text-xs text-accent">review</span>
                 )}
               </Link>
+              {review && e.needs_review && e.review_note && <p className="truncate text-sm text-accent">{e.review_note}</p>}
               <p className="truncate text-sm text-muted">
                 {[e.movement_pattern, e.equipment, TRACKING_LABEL[e.tracking_type] ?? e.tracking_type]
                   .filter(Boolean)

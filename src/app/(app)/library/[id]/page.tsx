@@ -57,7 +57,9 @@ export default async function ExercisePage({ params, searchParams }: PageProps<"
         </Notice>
       )}
       {e.approved && e.needs_review && !sp.saved && (
-        <p className="text-sm text-muted">Marked for review. Check the details and save to clear the mark.</p>
+        <p className="text-sm text-muted">
+          Marked for review{e.review_note ? <>: <span className="text-text">{e.review_note}</span></> : ""}. Check the details and save to clear the mark.
+        </p>
       )}
 
       <Card>

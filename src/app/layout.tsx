@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { OfflineReady } from "@/components/offline-ready";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -17,7 +18,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className="h-full antialiased">
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        {children}
+        <OfflineReady />
+      </body>
     </html>
   );
 }

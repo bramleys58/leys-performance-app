@@ -38,6 +38,23 @@ const sameSet = (a: SetInput, b: SetInput) => rowKey(a) === rowKey(b) && a.setNu
 /** A set that still has to reach the server: a save, or a removal (un-ticked). Kept on the phone until it does. */
 type Pending = SetInput & { remove?: boolean; stamp: number; failed?: boolean };
 const outboxKey = (workoutLogId: string) => `lp-outbox-${workoutLogId}`;
+const mirrorKey = (workoutLogId: string) => `lp-logged-${workoutLogId}`;
+/** The phone's own record of a workout's ticked sets. Records older than two weeks are cleaned up on the way. */
+function readMirror(workoutLogId: string): LoggedSet[] | null {
+  try {
+    const now = Date.now();
+    for (let i = window.localStorage.length - 1; i >= 0; i--) {
+      const key = window.localStorage.key(i);
+      if (!key?.startsWith("lp-logged-") || key === mirrorKey(workoutLogId)) continue;
+      const at = JSON.parse(window.localStorage.getItem(key) ?? "{}").at;
+      if (typeof at !== "number" || now - at > 14 * 86_400_000) window.localStorage.removeItem(key);
+    }
+    const kept = JSON.parse(window.localStorage.getItem(mirrorKey(workoutLogId)) ?? "null");
+    return kept && Array.isArray(kept.sets) ? (kept.sets as LoggedSet[]) : null;
+  } catch {
+    return null;
+  }
+}
 function readOutbox(workoutLogId: string): Pending[] {
   try {
     const list = JSON.parse(window.localStorage.getItem(outboxKey(workoutLogId)) ?? "[]");
@@ -122,9 +139,12 @@ export function Logger(props: Props) {
   useEffect(() => {
     const t = setTimeout(() => {
       const waiting = readOutbox(workoutLogId);
-      if (waiting.length > 0) {
+      // Opened without a connection: this page is a kept copy and may be older than what was
+      // ticked since. The phone's own record of this workout is the newer one.
+      const mirror = navigator.onLine ? null : readMirror(workoutLogId);
+      if (waiting.length > 0 || mirror) {
         setLogged((m) => {
-          const next = new Map(m);
+          const next = mirror ? new Map(mirror.map((s) => [keyOf(s.rowId, s.setNumber), s])) : new Map(m);
           for (const i of waiting) {
             const rowId = rowKey(i);
             if (!rowId) continue;
@@ -149,6 +169,16 @@ export function Logger(props: Props) {
       // Private mode or full storage: the sets still wait in memory while this screen is open.
     }
   }, [unsaved, outboxLoaded, workoutLogId]);
+
+  // Remember the ticked sets of this workout on the phone, for opening it without a connection.
+  useEffect(() => {
+    if (!outboxLoaded) return;
+    try {
+      window.localStorage.setItem(mirrorKey(workoutLogId), JSON.stringify({ at: clockNow(), sets: [...logged.values()] }));
+    } catch {
+      // No storage: nothing to do.
+    }
+  }, [logged, outboxLoaded, workoutLogId]);
 
   // Keep trying while something waits: when the connection returns, when the app comes back to the front, and every 15 seconds.
   useEffect(() => {

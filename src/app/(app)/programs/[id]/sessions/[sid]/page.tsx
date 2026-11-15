@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
 import { ExercisePicker } from "@/components/exercise-picker";
+import { TargetFields } from "@/components/target-fields";
 import { ActionButton, BackLink, Card, Field, Notice, PrimaryButton, SecondaryButton, Select, inputClass } from "@/components/ui";
 import { requireCoach } from "@/lib/auth";
-import { SUPERSET_COLORS, WEEKDAYS, sortRows, supersetLabels, type PlanRow } from "@/lib/plan";
+import { SUPERSET_COLORS, WEEKDAYS, sortRows, supersetLabels, weekNumbers, type PlanRow } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/server";
 import { addRow, deleteSession, rowOp, saveRows, updateSession } from "../../../../coach-actions";
 
@@ -15,17 +16,33 @@ export default async function SessionEditorPage({ params, searchParams }: PagePr
   const supabase = await createClient();
 
   const [{ data: session }, { data: rowData }] = await Promise.all([
-    supabase.from("sessions").select("*, programs(name)").eq("id", sid).eq("program_id", programId).maybeSingle(),
+    supabase.from("sessions").select("*, programs(name, athlete_id, athletes(unit))").eq("id", sid).eq("program_id", programId).maybeSingle(),
     supabase.from("session_exercises").select("*").eq("session_id", sid),
   ]);
   if (!session) notFound();
 
   const rows = sortRows((rowData ?? []) as PlanRow[]);
   const labels = supersetLabels(rows);
-  const programName = (session.programs as unknown as { name: string } | null)?.name ?? "Program";
+  const program = session.programs as unknown as { name: string; athlete_id: string | null; athletes: { unit: "kg" | "lbs" } | null } | null;
+  const programName = program?.name ?? "Program";
+  const athleteId = program?.athlete_id ?? null;
+  const unit = program?.athletes?.unit ?? "kg";
+
+  // For "% of max": the main lifts, the athlete's working maxes and each lift's plate step.
+  const rowExerciseIds = [...new Set(rows.map((r) => r.exercise_id).filter(Boolean))] as string[];
+  const [{ data: liftData }, { data: maxData }, { data: stepData }, { data: weekData }] = await Promise.all([
+    supabase.from("exercises").select("id, name").eq("counts_for_maxes", true).eq("archived", false).order("name"),
+    athleteId ? supabase.from("maxes").select("exercise_id, value").eq("athlete_id", athleteId).eq("is_active", true) : Promise.resolve({ data: null }),
+    rowExerciseIds.length ? supabase.from("exercises").select("id, weight_step").in("id", rowExerciseIds) : Promise.resolve({ data: [] }),
+    supabase.from("sessions").select("week").eq("program_id", programId),
+  ]);
+  const lifts = (liftData ?? []) as { id: string; name: string }[];
+  const maxes = maxData ? Object.fromEntries((maxData as { exercise_id: string; value: number }[]).map((m) => [m.exercise_id, Number(m.value)])) : null;
+  const stepOf = new Map(((stepData ?? []) as { id: string; weight_step: number }[]).map((e) => [e.id, Number(e.weight_step)]));
+  const weeks = weekNumbers((weekData ?? []) as { week: number | null }[]);
   const isSlot = session.kind === "slot";
   const rowsKey = rows
-    .map((r) => [r.id, r.position, r.display_name, r.superset_group, r.sets, r.reps, r.tempo, r.target_type, r.target_value, r.ask_rpe, r.coaching_note, r.video_url].join("|"))
+    .map((r) => [r.id, r.position, r.display_name, r.superset_group, r.sets, r.reps, r.tempo, r.target_type, r.target_value, r.max_exercise_id, r.ask_rpe, r.coaching_note, r.video_url].join("|"))
     .join("~");
 
   const section = (key: "prep" | "workout", title: string) => {
@@ -66,24 +83,19 @@ export default async function SessionEditorPage({ params, searchParams }: PagePr
                   <input name={`tempo__${r.id}`} defaultValue={r.tempo ?? ""} className={small} />
                 </label>
               </div>
-              <div className="mt-2 grid grid-cols-[1fr_1fr_auto] items-end gap-2 lg:mt-0 lg:min-w-0 lg:flex-1">
-                <label className="text-xs text-muted">
-                  Target
-                  <select name={`target_type__${r.id}`} defaultValue={r.target_type} className={small}>
-                    <option value="none">None (athlete picks)</option>
-                    <option value="weight">Weight</option>
-                    <option value="percent">% of max</option>
-                    <option value="rpe">RPE</option>
-                  </select>
-                </label>
-                <label className="text-xs text-muted">
-                  Value
-                  <input name={`target_value__${r.id}`} defaultValue={r.target_value ?? ""} inputMode="decimal" className={small} />
-                </label>
-                <label className="flex items-center gap-1.5 pb-2 text-xs text-muted">
-                  <input type="checkbox" name={`ask_rpe__${r.id}`} defaultChecked={r.ask_rpe} /> Ask RPE
-                </label>
-              </div>
+              <TargetFields
+                rowId={r.id}
+                type={r.target_type}
+                value={r.target_value == null ? null : Number(r.target_value)}
+                askRpe={r.ask_rpe}
+                exerciseId={r.exercise_id}
+                maxExerciseId={r.max_exercise_id ?? null}
+                lifts={lifts}
+                maxes={maxes}
+                step={stepOf.get(r.exercise_id ?? "") ?? 2.5}
+                unit={unit}
+                maxesHref={athleteId ? `/athletes/${athleteId}/maxes` : null}
+              />
               <label className="mt-2 block text-xs text-muted lg:w-[62%]">
                 Coaching note
                 <textarea name={`coaching_note__${r.id}`} defaultValue={r.coaching_note ?? ""} rows={2} className={small} />
@@ -123,7 +135,10 @@ export default async function SessionEditorPage({ params, searchParams }: PagePr
   return (
     <div className="page-wide space-y-5">
       <BackLink href={`/programs/${programId}`}>{programName}</BackLink>
-      <h1 className="text-2xl font-bold">{session.name}</h1>
+      <h1 className="text-2xl font-bold">
+        {session.name}
+        {session.week ? <span className="ml-2 text-base font-normal text-muted">week {session.week}</span> : null}
+      </h1>
       {sp.saved && <Notice kind="ok">Saved.</Notice>}
 
       {isSlot ? (
@@ -163,6 +178,16 @@ export default async function SessionEditorPage({ params, searchParams }: PagePr
               ))}
             </Select>
             <Field label="Or one fixed date" name="scheduled_date" type="date" defaultValue={session.scheduled_date ?? ""} />
+            {weeks.length > 0 && (
+              <Select label="Week of the block" name="week" defaultValue={session.week ?? ""}>
+                {weeks.map((w) => (
+                  <option key={w} value={w}>
+                    Week {w}
+                  </option>
+                ))}
+                <option value="">Every week</option>
+              </Select>
+            )}
             <Select label="Kind" name="kind" defaultValue={session.kind}>
               <option value="workout">Workout</option>
               <option value="routine">Routine</option>

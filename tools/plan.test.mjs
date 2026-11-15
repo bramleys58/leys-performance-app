@@ -1,6 +1,6 @@
 // Quick checks for src/lib/plan.ts. Run: node --experimental-strip-types tools/plan.test.mjs
 import assert from "node:assert/strict";
-import { buildSteps, epley, firstNumber, looksLikeTime, roundToStep, supersetLabels, weekRange } from "../src/lib/plan.ts";
+import { buildSteps, epley, firstNumber, looksLikeTime, programWeek, roundToStep, supersetLabels, weekFilter, weekRange } from "../src/lib/plan.ts";
 
 const row = (id, group, sets, section = "workout", position = 0) => ({ id, superset_group: group, sets, section, position });
 // A1 has 3 sets, A2 has 4: alternate, then finish the longer one.
@@ -14,6 +14,20 @@ assert.equal(Math.round(epley(85, 5) * 100) / 100, 99.17); assert.equal(epley(10
 assert.deepEqual(weekRange("2026-11-12"), { monday: "2026-11-09", sunday: "2026-11-15" });
 assert.deepEqual(weekRange("2026-11-15"), { monday: "2026-11-09", sunday: "2026-11-15" });
 assert.deepEqual(weekRange("2026-11-09"), { monday: "2026-11-09", sunday: "2026-11-15" });
+// Blocks: start Wed 4 Nov 2026, 3 weeks. Week 1 is the week of the start date.
+assert.equal(programWeek("2026-11-04", "2026-11-02", 3), 1); assert.equal(programWeek("2026-11-04", "2026-11-08", 3), 1);
+assert.equal(programWeek("2026-11-04", "2026-11-09", 3), 2); assert.equal(programWeek("2026-11-04", "2026-11-22", 3), 3);
+assert.equal(programWeek("2026-11-04", "2026-12-25", 3), 3); assert.equal(programWeek("2026-11-04", "2026-10-01", 3), 1);
+assert.equal(programWeek(null, "2026-11-09", 3), 1); assert.equal(programWeek("2026-11-04", "2026-11-20", 1), 1);
+// Clock change week (25 Oct 2026) still counts as one week.
+assert.equal(programWeek("2026-10-19", "2026-10-26", 4), 2);
+{
+  const ss = [{ id: "a", week: 1, program_id: "p" }, { id: "b", week: 2, program_id: "p" }, { id: "c", week: null, program_id: "p" }, { id: "d", week: null, program_id: "q" }];
+  const runs = weekFilter(ss, () => "2026-11-02");
+  assert.deepEqual(ss.filter((s) => runs(s, "2026-11-05")).map((s) => s.id), ["a", "c", "d"]);
+  assert.deepEqual(ss.filter((s) => runs(s, "2026-11-12")).map((s) => s.id), ["b", "c", "d"]);
+  assert.deepEqual(ss.filter((s) => runs(s, "2026-12-12")).map((s) => s.id), ["b", "c", "d"]);
+}
 console.log("plan.ts: all checks passed");
 
 // check-in readiness

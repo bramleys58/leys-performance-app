@@ -4,7 +4,7 @@ import { WeeklyAnswers } from "@/components/weekly-answers";
 import { requireCoach } from "@/lib/auth";
 import { weekLabel, weeklyTarget, type WeeklyCheckIn } from "@/lib/weekly";
 import { flags as checkFlags, readiness, type CheckIn } from "@/lib/checkin";
-import { WEEKDAYS, isoWeekday, todayISO, weekRange } from "@/lib/plan";
+import { WEEKDAYS, isoWeekday, todayISO, weekFilter, weekRange } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata = { title: "Follow-up | Leys Performance" };
@@ -21,7 +21,7 @@ export default async function FollowUpPage() {
   const target = weeklyTarget(day, weekday);
   const [{ data: athletes }, { data: sessions }, { data: logs }, { data: checks }, { data: weeklies }] = await Promise.all([
     supabase.from("athletes").select("id, full_name, sport").eq("status", "active").order("full_name"),
-    supabase.from("sessions").select("id, name, weekday, kind, is_optional, programs!inner(athlete_id, status)").eq("programs.status", "active"),
+    supabase.from("sessions").select("id, name, weekday, kind, is_optional, week, program_id, programs!inner(athlete_id, status, start_date, created_at)").eq("programs.status", "active"),
     supabase.from("workout_logs").select("id, athlete_id, session_id, session_name, performed_on, finished_at, session_rpe, duration_minutes, comment, set_logs(count)").gte("performed_on", twoWeeksAgo).order("performed_on", { ascending: false }),
     supabase.from("check_ins").select("*").eq("day", day),
   supabase.from("weekly_check_ins").select("*").eq("week_start", target.weekStart).order("created_at", { ascending: false }),
@@ -33,9 +33,11 @@ export default async function FollowUpPage() {
   // Older unread ones (from weeks no longer shown here) are marked as read too, so the home card clears.
   await supabase.from("weekly_check_ins").update({ coach_seen_at: new Date().toISOString() }).is("coach_seen_at", null).lt("week_start", target.weekStart);
 
-  type S = { id: string; name: string; weekday: number | null; kind: string; is_optional: boolean; programs: { athlete_id: string } };
+  type S = { id: string; name: string; weekday: number | null; kind: string; is_optional: boolean; week: number | null; program_id: string; programs: { athlete_id: string; start_date: string | null; created_at: string } };
   type L = { id: string; athlete_id: string; session_id: string | null; session_name: string | null; performed_on: string; finished_at: string | null; session_rpe: number | null; duration_minutes: number | null; comment: string | null; set_logs: { count: number }[] };
-  const allSessions = (sessions ?? []) as unknown as S[];
+  const everySession = (sessions ?? []) as unknown as S[];
+  const runsThisWeek = weekFilter(everySession, (s) => s.programs.start_date ?? s.programs.created_at.slice(0, 10));
+  const allSessions = everySession.filter((s) => runsThisWeek(s, day));
   const allLogs = ((logs ?? []) as unknown as L[]).filter((l) => l.finished_at || (l.set_logs?.[0]?.count ?? 0) > 0);
 
   const rows = (athletes ?? []).map((a) => {

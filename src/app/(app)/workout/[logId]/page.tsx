@@ -4,7 +4,7 @@ import { Card, SecondaryButton } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { epley, roundToStep, sortRows, type PlanRow, type TrackingType } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/server";
-import { extraRow, isBarbell, type LoggedSet, type LoggerRow } from "@/lib/logger-types";
+import { extraRow, type LoggedSet, type LoggerRow } from "@/lib/logger-types";
 import { reopenWorkout } from "../../athlete-actions";
 import { Logger } from "./logger";
 
@@ -29,7 +29,7 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
     log.session_id
       ? supabase
           .from("session_exercises")
-          .select("*, exercises(tracking_type, weight_step, video_url, equipment)")
+          .select("*, exercises!session_exercises_exercise_id_fkey(tracking_type, weight_step, video_url, equipment), base:exercises!session_exercises_max_exercise_id_fkey(name)")
           .eq("session_id", log.session_id)
       : Promise.resolve({ data: [] as unknown[] }),
     supabase.from("set_logs").select("*").eq("workout_log_id", logId),
@@ -43,16 +43,18 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
   const extras = (extraData ?? []) as unknown as Extra[];
   const isFree = !log.session_id;
 
-  type Row = PlanRow & { exercises: { tracking_type: TrackingType; weight_step: number; video_url: string | null; equipment: string | null } | null };
+  type Row = PlanRow & { base: { name: string } | null; exercises: { tracking_type: TrackingType; weight_step: number; video_url: string | null; equipment: string | null } | null };
   const rows = sortRows((rowData ?? []) as Row[]);
   const exerciseIds = [...new Set([...rows.map((r) => r.exercise_id), ...extras.map((e) => e.exercise_id)].filter(Boolean))] as string[];
+  // A percent can be based on another lift, so those maxes are needed too.
+  const maxIds = [...new Set([...exerciseIds, ...rows.map((r) => r.max_exercise_id)].filter(Boolean))] as string[];
 
   const [{ data: lastData }, { data: maxData }] = await Promise.all([
     exerciseIds.length
       ? supabase.rpc("previous_sets", { p_athlete: athlete.id, p_exercises: exerciseIds, p_before: log.performed_on, p_exclude: logId })
       : Promise.resolve({ data: [] }),
-    exerciseIds.length
-      ? supabase.from("maxes").select("exercise_id, value").eq("athlete_id", athlete.id).eq("is_active", true).in("exercise_id", exerciseIds)
+    maxIds.length
+      ? supabase.from("maxes").select("exercise_id, value").eq("athlete_id", athlete.id).eq("is_active", true).in("exercise_id", maxIds)
       : Promise.resolve({ data: [] }),
   ]);
 
@@ -64,7 +66,8 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
   const loggerRows: LoggerRow[] = rows.map((r) => {
     const step = Number(r.exercises?.weight_step ?? 2.5);
     const previous = (r.exercise_id ? prevBy.get(r.exercise_id) : undefined) ?? [];
-    const max = r.exercise_id ? maxBy.get(r.exercise_id) : undefined;
+    const maxOf = r.max_exercise_id ?? r.exercise_id;
+    const max = maxOf ? maxBy.get(maxOf) : undefined;
     let plannedKg: number | null = null;
     if (r.target_type === "weight" && r.target_value != null) {
       // A weight target is written in the athlete's own unit.
@@ -84,13 +87,13 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
       reps: r.reps,
       tempo: r.tempo,
       targetType: r.target_type,
+      maxName: r.max_exercise_id && r.max_exercise_id !== r.exercise_id ? r.base?.name ?? null : null,
       targetValue: r.target_value == null ? null : Number(r.target_value),
       askRpe: r.ask_rpe,
       note: r.coaching_note,
       videoUrl: r.video_url ?? r.exercises?.video_url ?? null,
       tracking: r.exercises?.tracking_type ?? "load",
       weightStep: step,
-      barbell: isBarbell(r.exercises?.equipment),
       plannedKg,
       previous: previous.map((p) => ({
         setNumber: p.set_number,

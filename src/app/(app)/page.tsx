@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { AthleteHome, today } from "@/components/athlete-home";
-import { isoWeekday, todayISO } from "@/lib/plan";
+import { isoWeekday, todayISO, weekFilter } from "@/lib/plan";
 import { Card } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -23,18 +23,20 @@ async function CoachHome({ firstName }: { firstName: string }) {
     supabase.from("weekly_check_ins").select("id", { count: "exact", head: true }).is("coach_seen_at", null),
     supabase
       .from("sessions")
-      .select("id, name, kind, scheduled_date, weekday, programs!inner(status, athlete_id, athletes!inner(id, full_name, status))")
-      .eq("programs.status", "active")
-      .or(`weekday.eq.${isoWeekday()},scheduled_date.eq.${day}`),
+      .select("id, name, kind, scheduled_date, weekday, week, program_id, programs!inner(status, athlete_id, start_date, created_at, athletes!inner(id, full_name, status))")
+      .eq("programs.status", "active"),
     supabase.from("workout_logs").select("athlete_id, session_id, finished_at, duration_minutes").eq("performed_on", day),
     supabase.from("check_ins").select("id", { count: "exact", head: true }).eq("day", day),
   ]);
 
-  type T = { id: string; name: string; kind: string; scheduled_date: string | null; weekday: number | null; programs: { athlete_id: string; athletes: { id: string; full_name: string; status: string } } };
+  type T = { id: string; name: string; kind: string; scheduled_date: string | null; weekday: number | null; week: number | null; program_id: string; programs: { athlete_id: string; start_date: string | null; created_at: string; athletes: { id: string; full_name: string; status: string } } };
   type TL = { athlete_id: string; session_id: string | null; finished_at: string | null; duration_minutes: number | null };
   const logsToday = (todayLogs.data ?? []) as TL[];
-  const training = ((todays.data ?? []) as unknown as T[])
-    .filter((s) => s.programs.athletes.status === "active" && (!s.scheduled_date || s.scheduled_date === day))
+  const activeSessions = (todays.data ?? []) as unknown as T[];
+  const runsThisWeek = weekFilter(activeSessions, (s) => s.programs.start_date ?? s.programs.created_at.slice(0, 10));
+  const weekdayNow = isoWeekday();
+  const training = activeSessions
+    .filter((s) => s.programs.athletes.status === "active" && runsThisWeek(s, day) && (s.scheduled_date ? s.scheduled_date === day : s.weekday === weekdayNow))
     .map((s) => {
       const log = logsToday.find((l) => l.session_id === s.id && l.athlete_id === s.programs.athlete_id);
       return { key: s.id, athleteId: s.programs.athletes.id, athlete: s.programs.athletes.full_name, session: s.name, slot: s.kind === "slot", status: log?.finished_at ? `done${log.duration_minutes ? ` · ${log.duration_minutes} min` : ""}` : log ? "in progress" : s.kind === "slot" ? "with you" : "not started" };

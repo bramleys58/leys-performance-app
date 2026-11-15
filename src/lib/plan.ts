@@ -35,6 +35,7 @@ export type PlanRow = {
   coaching_note: string | null;
   video_url: string | null;
   video_start_seconds: number | null;
+  max_exercise_id?: string | null;
 };
 
 /** Monday = 1 ... Sunday = 7, in Belgian time. */
@@ -57,6 +58,36 @@ export function weekRange(day = todayISO()): { monday: string; sunday: string } 
   const sunday = new Date(monday);
   sunday.setUTCDate(monday.getUTCDate() + 6);
   return { monday: monday.toISOString().slice(0, 10), sunday: sunday.toISOString().slice(0, 10) };
+}
+
+/**
+ * Which week of a block a day falls in. Week 1 is the week of the start date.
+ * Before the start it is week 1, after the last week the last week keeps repeating.
+ */
+export function programWeek(start: string | null, day: string, weeks: number): number {
+  if (weeks <= 1 || !start) return 1;
+  const a = Date.parse(weekRange(start.slice(0, 10)).monday + "T12:00:00Z");
+  const b = Date.parse(weekRange(day).monday + "T12:00:00Z");
+  const n = Math.round((b - a) / (7 * 86400000)) + 1;
+  return Math.min(Math.max(n, 1), weeks);
+}
+
+type Weeked = { week: number | null; program_id: string };
+
+/**
+ * Returns a test "does this session run in the week of this day?". Sessions
+ * without a week number run every week. Pass every session of the programs
+ * involved, so the length of each block is known.
+ */
+export function weekFilter<T extends Weeked>(all: T[], startOf: (s: T) => string | null) {
+  const weeks = new Map<string, number>();
+  for (const s of all) if (s.week) weeks.set(s.program_id, Math.max(weeks.get(s.program_id) ?? 0, s.week));
+  return (s: T, day: string) => !s.week || s.week === programWeek(startOf(s), day, weeks.get(s.program_id) ?? 1);
+}
+
+/** Week numbers used in a list of sessions, in order. */
+export function weekNumbers(sessions: { week: number | null }[]): number[] {
+  return [...new Set(sessions.map((s) => s.week).filter((w): w is number => w != null))].sort((a, b) => a - b);
 }
 
 /** Rows in display order: prep first, then workout, each by position. */

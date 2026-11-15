@@ -1,4 +1,4 @@
-import { todayISO } from "@/lib/plan";
+import { todayISO, weekFilter } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/server";
 
 export type CalItem =
@@ -49,7 +49,7 @@ export async function getCalendar(athleteId: string, month: string, forCoach: bo
   const [{ data: sessions }, { data: logs }, { data: checks }, { data: results }] = await Promise.all([
     supabase
       .from("sessions")
-      .select("id, name, kind, weekday, scheduled_date, is_optional, position, programs!inner(status, athlete_id, start_date, created_at)")
+      .select("id, name, kind, weekday, scheduled_date, is_optional, position, week, program_id, programs!inner(status, athlete_id, start_date, created_at)")
       .eq("programs.status", "active")
       .eq("programs.athlete_id", athleteId),
     supabase
@@ -62,10 +62,11 @@ export async function getCalendar(athleteId: string, month: string, forCoach: bo
     supabase.from("test_results").select("test_event_id, test_events!inner(id, name, held_on)").eq("athlete_id", athleteId).gte("test_events.held_on", start).lte("test_events.held_on", end),
   ]);
 
-  type S = { id: string; name: string; kind: string; weekday: number | null; scheduled_date: string | null; is_optional: boolean; position: number; programs: { start_date: string | null; created_at: string } };
+  type S = { id: string; name: string; kind: string; weekday: number | null; scheduled_date: string | null; is_optional: boolean; position: number; week: number | null; program_id: string; programs: { start_date: string | null; created_at: string } };
   type L = { id: string; session_id: string | null; session_name: string | null; performed_on: string; finished_at: string | null; duration_minutes: number | null };
   const allSessions = (sessions ?? []) as unknown as S[];
   const allLogs = (logs ?? []) as L[];
+  const runsInWeek = weekFilter(allSessions, (s) => s.programs.start_date ?? s.programs.created_at.slice(0, 10));
   const checked = new Set(((checks ?? []) as { day: string }[]).map((c) => c.day));
   const tests = new Map<string, { id: string; name: string; held_on: string }>();
   for (const r of (results ?? []) as unknown as { test_events: { id: string; name: string; held_on: string } }[]) tests.set(r.test_events.id, r.test_events);
@@ -86,7 +87,7 @@ export async function getCalendar(athleteId: string, month: string, forCoach: bo
 
     for (const s of [...allSessions].sort((a, b) => a.position - b.position)) {
       const onThisDay = s.scheduled_date ? s.scheduled_date === date : s.weekday === weekday;
-      if (!onThisDay) continue;
+      if (!onThisDay || !runsInWeek(s, date)) continue;
       // A repeating session only counts from the day its program starts.
       const from = s.programs.start_date ?? s.programs.created_at.slice(0, 10);
       if (!s.scheduled_date && date < from) continue;

@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 import { BackLink, Card, PrimaryButton, SecondaryButton } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
-import { SUPERSET_COLORS, formatTarget, sortRows, supersetLabels, type PlanRow } from "@/lib/plan";
+import { getMyAthlete } from "@/lib/athlete";
+import { SUPERSET_COLORS, formatTarget, roundToStep, sortRows, supersetLabels, type PlanRow } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/server";
 import { startWorkout } from "../../athlete-actions";
 
@@ -15,17 +16,37 @@ export default async function SessionPreviewPage({ params, searchParams }: PageP
 
   const [{ data: session }, { data: rowData }] = await Promise.all([
     supabase.from("sessions").select("*, programs(name, athlete_id)").eq("id", sid).maybeSingle(),
-    supabase.from("session_exercises").select("*, exercises(video_url, equipment)").eq("session_id", sid),
+    supabase.from("session_exercises").select("*, exercises!session_exercises_exercise_id_fkey(video_url, equipment, weight_step), base:exercises!session_exercises_max_exercise_id_fkey(name)").eq("session_id", sid),
   ]);
   if (!session) notFound();
 
-  type Row = PlanRow & { exercises: { video_url: string | null; equipment: string | null } | null };
+  type Row = PlanRow & { base: { name: string } | null; exercises: { video_url: string | null; equipment: string | null; weight_step: number | null } | null };
   const rows = sortRows((rowData ?? []) as Row[]);
   const labels = supersetLabels(rows);
   const equipment = [...new Set(rows.flatMap((r) => (r.exercises?.equipment ?? "").split("+").map((e) => e.trim())).filter((e) => e && e !== "Bodyweight"))];
   const program = session.programs as unknown as { name: string; athlete_id: string } | null;
   const athleteId = forAthlete ?? (user.role === "coach" ? program?.athlete_id ?? null : null);
   const { data: owner } = athleteId ? await supabase.from("athletes").select("user_id").eq("id", athleteId).maybeSingle() : { data: null };
+
+  // Percent targets shown as a weight, from the maxes of whoever is going to train.
+  const me = athleteId ? null : await getMyAthlete();
+  const trainee = athleteId ?? me?.id ?? null;
+  const percentIds = [...new Set(rows.filter((r) => r.target_type === "percent").map((r) => r.max_exercise_id ?? r.exercise_id).filter(Boolean))] as string[];
+  const [{ data: maxData }, { data: traineeRow }] = await Promise.all([
+    trainee && percentIds.length ? supabase.from("maxes").select("exercise_id, value").eq("athlete_id", trainee).eq("is_active", true).in("exercise_id", percentIds) : Promise.resolve({ data: [] }),
+    trainee ? supabase.from("athletes").select("unit").eq("id", trainee).maybeSingle() : Promise.resolve({ data: null }),
+  ]);
+  const maxBy = new Map(((maxData ?? []) as { exercise_id: string; value: number }[]).map((m) => [m.exercise_id, Number(m.value)]));
+  const unit: "kg" | "lbs" = traineeRow?.unit === "lbs" ? "lbs" : "kg";
+  const target = (r: Row) => {
+    if (r.target_type !== "percent" || r.target_value == null) return formatTarget(r, unit);
+    const max = maxBy.get(r.max_exercise_id ?? r.exercise_id ?? "");
+    const of = r.max_exercise_id && r.max_exercise_id !== r.exercise_id && r.base ? ` of ${r.base.name}` : "";
+    if (!max) return `${r.target_value}%${of}`;
+    const kg = roundToStep((max * Number(r.target_value)) / 100, Number(r.exercises?.weight_step ?? 2.5));
+    const shown = unit === "lbs" ? Math.round((kg / 0.45359237) * 2) / 2 : kg;
+    return `${r.target_value}%${of} = ${shown} ${unit}`;
+  };
   const own = user.role === "coach" && owner?.user_id === user.id;
   const backHref = own ? "/me" : user.role === "coach" && athleteId ? `/athletes/${athleteId}` : "/";
 
@@ -48,7 +69,7 @@ export default async function SessionPreviewPage({ params, searchParams }: PageP
                 <div className="min-w-0 flex-1">
                   <p className="font-medium">{r.display_name}</p>
                   <p className="text-sm text-muted">
-                    {[r.sets && r.reps ? `${r.sets} × ${r.reps}` : r.sets ? `${r.sets} sets` : r.reps, r.tempo ? `tempo ${r.tempo}` : null, formatTarget(r)]
+                    {[r.sets && r.reps ? `${r.sets} × ${r.reps}` : r.sets ? `${r.sets} sets` : r.reps, r.tempo ? `tempo ${r.tempo}` : null, target(r)]
                       .filter(Boolean)
                       .join(" · ")}
                   </p>

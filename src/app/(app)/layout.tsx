@@ -18,7 +18,13 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
               { href: "/testing", label: "Testing", icon: "⏱️" },
             ],
           },
-          { title: "Programming", links: [{ href: "/library", label: "Exercise library", icon: "📚" }] },
+          {
+            title: "Programming",
+            links: [
+              { href: "/templates", label: "Program templates", icon: "🗂️" },
+              { href: "/library", label: "Exercise library", icon: "📚" },
+            ],
+          },
           ...(athlete
             ? [
                 {

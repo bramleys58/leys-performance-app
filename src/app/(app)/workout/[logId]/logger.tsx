@@ -409,9 +409,6 @@ export function Logger(props: Props) {
               rest {rest}
             </span>
           )}
-          <span>
-            {doneCount}/{total}
-          </span>
         </span>
         <button type="button" onClick={() => setView(view === "finish" ? "log" : "finish")} className="rounded-lg bg-ok px-3 py-1.5 font-semibold text-white">
           {view === "finish" ? "Back" : "Finish"}
@@ -516,20 +513,10 @@ export function Logger(props: Props) {
     const grid = { gridTemplateColumns: `1.75rem minmax(0,1.3fr) ${inputs.map(() => "minmax(0,1fr)").join(" ")} 2.5rem` };
     const targetLine =
       row.targetType === "percent" && row.targetValue != null
-        ? `${row.targetValue}% of max${row.plannedKg != null ? ` = ${trim(toDisplay(row.plannedKg))} ${unit}` : " (no max set yet)"}`
+        ? `${row.targetValue}% of ${row.maxName ? row.maxName + " max" : "max"}${row.plannedKg != null ? ` = ${trim(toDisplay(row.plannedKg))} ${unit}` : " (no max set yet)"}`
         : row.targetType === "rpe" && row.targetValue != null
           ? `target RPE ${row.targetValue}`
           : null;
-    // Plates per side for the next open set of a barbell lift (20 kg bar, 45 lb in pounds).
-    let plates: string | null = null;
-    if (row.barbell && cols.weight) {
-      let nextSet = 0;
-      for (let n = 1; n <= count && !nextSet; n++) if (!logged.has(keyOf(row.id, n))) nextSet = n;
-      const w = nextSet ? parse(shown(row, nextSet, "weight") || suggestion(row, nextSet, "weight")) : null;
-      const bar = unit === "lbs" ? 45 : 20;
-      if (w != null && w > bar) plates = `Set ${nextSet}: ${trim(w)} ${unit} = ${trim((w - bar) / 2)} per side on a ${bar} ${unit} bar`;
-    }
-
     const planLine = [row.sets && row.reps ? `${row.sets} × ${row.reps}` : row.reps, row.tempo ? `tempo ${row.tempo}` : null, targetLine].filter(Boolean).join(" · ");
 
     return (
@@ -677,7 +664,6 @@ export function Logger(props: Props) {
           })}
         </div>
 
-        {plates && <p className="mt-2 text-center text-xs text-muted">{plates}</p>}
 
         <button type="button" onClick={() => setExtra((x) => ({ ...x, [row.id]: (x[row.id] ?? 0) + 1 }))} className="mt-2 w-full rounded-lg bg-surface-2 py-2 text-sm text-muted">
           + Add set

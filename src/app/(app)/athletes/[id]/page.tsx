@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ActionButton, BackLink, Card, Field, Notice, SecondaryButton, Select, inputClass } from "@/components/ui";
 import { WeeklyAnswers } from "@/components/weekly-answers";
 import { requireCoach } from "@/lib/auth";
+import { todayISO, weekFilter } from "@/lib/plan";
 import type { WeeklyCheckIn } from "@/lib/weekly";
 import { createClient } from "@/lib/supabase/server";
 import { copyProgram, createProgram, inviteAthlete, updateAthlete } from "../../coach-actions";
@@ -16,19 +17,28 @@ export default async function AthletePage({ params, searchParams }: PageProps<"/
 
   const [{ data: athlete }, { data: programs }, { data: others }] = await Promise.all([
     supabase.from("athletes").select("*").eq("id", id).maybeSingle(),
-    supabase.from("programs").select("id, name, phase, status, start_date").eq("athlete_id", id).order("created_at", { ascending: false }),
-    supabase.from("programs").select("id, name, athletes(full_name)").neq("status", "archived").order("created_at", { ascending: false }).limit(60),
+    supabase.from("programs").select("id, name, phase, status, start_date, created_at").eq("athlete_id", id).order("created_at", { ascending: false }),
+    supabase.from("programs").select("id, name, athlete_id, athletes(full_name)").neq("status", "archived").order("created_at", { ascending: false }).limit(200),
   ]);
   if (!athlete) notFound();
 
   const activeIds = (programs ?? []).filter((p) => p.status === "active").map((p) => p.id);
   const [{ data: liveSessions }, { data: recentLogs }, { data: weeklies }] = await Promise.all([
     activeIds.length
-      ? supabase.from("sessions").select("id, name, kind, weekday").in("program_id", activeIds).neq("kind", "slot").order("weekday", { nullsFirst: false }).order("position")
-      : Promise.resolve({ data: [] as { id: string; name: string; kind: string; weekday: number | null }[] }),
+      ? supabase.from("sessions").select("id, name, kind, weekday, week, program_id").in("program_id", activeIds).order("weekday", { nullsFirst: false }).order("position")
+      : Promise.resolve({ data: [] as { id: string; name: string; kind: string; weekday: number | null; week: number | null; program_id: string }[] }),
     supabase.from("workout_logs").select("id, session_name, performed_on, finished_at, session_rpe, duration_minutes").eq("athlete_id", id).order("performed_on", { ascending: false }).limit(8),
     supabase.from("weekly_check_ins").select("*").eq("athlete_id", id).order("week_start", { ascending: false }).limit(4),
   ]);
+
+  // In a multi-week block only this week's sessions are offered for logging.
+  const startOf = new Map((programs ?? []).map((p) => [p.id, p.start_date ?? String(p.created_at).slice(0, 10)]));
+  const everyLive = (liveSessions ?? []) as { id: string; name: string; kind: string; weekday: number | null; week: number | null; program_id: string }[];
+  const runsThisWeek = weekFilter(everyLive, (s) => startOf.get(s.program_id) ?? null);
+  const today = todayISO();
+  const live = everyLive.filter((s) => s.kind !== "slot" && runsThisWeek(s, today));
+  const templates = (others ?? []).filter((o) => !o.athlete_id);
+  const otherPrograms = (others ?? []).filter((o) => o.athlete_id && o.athlete_id !== id);
 
   return (
     <div className="space-y-5">
@@ -42,7 +52,7 @@ export default async function AthletePage({ params, searchParams }: PageProps<"/
         <h2 className="font-semibold">Log a session for {athlete.full_name.split(" ")[0]}</h2>
         <p className="mt-1 text-sm text-muted">Opens the same logging screen the athlete uses, with you entering the numbers.</p>
         <div className="mt-3 flex flex-wrap gap-2">
-          {(liveSessions ?? []).map((s) => (
+          {live.map((s) => (
             <Link key={s.id} href={`/session/${s.id}?athlete=${athlete.id}`} className="rounded-xl border border-border bg-surface-2 px-4 py-2.5 text-sm font-medium">
               {s.name}
             </Link>
@@ -125,23 +135,42 @@ export default async function AthletePage({ params, searchParams }: PageProps<"/
         </form>
 
         {(others ?? []).length > 0 && (
-          <form action={copyProgram} className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto]">
+          <form action={copyProgram} className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto_auto]">
             <input type="hidden" name="athlete_id" value={athlete.id} />
-            <select name="source_id" className={inputClass} defaultValue="">
+            <select name="source_id" required className={inputClass} defaultValue="" aria-label="Template or program to copy">
               <option value="" disabled>
-                Or copy an existing program…
+                Or start from a template or another program…
               </option>
-              {(others ?? []).map((o) => {
-                const owner = (o.athletes as unknown as { full_name: string } | null)?.full_name;
-                return (
-                  <option key={o.id} value={o.id}>
-                    {o.name}
-                    {owner ? ` (${owner})` : ""}
-                  </option>
-                );
-              })}
+              {templates.length > 0 && (
+                <optgroup label="Templates">
+                  {templates.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {otherPrograms.length > 0 && (
+                <optgroup label="Programs of other athletes">
+                  {otherPrograms.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.name} ({(o.athletes as unknown as { full_name: string } | null)?.full_name})
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {(programs ?? []).length > 0 && (
+                <optgroup label={`Earlier programs of ${athlete.full_name.split(" ")[0]}`}>
+                  {(programs ?? []).map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
-            <ActionButton className="rounded-xl border border-border bg-surface-2 px-5 py-2.5 font-medium">Copy</ActionButton>
+            <input name="start_date" type="date" aria-label="Start date" className={inputClass} />
+            <ActionButton className="rounded-xl border border-border bg-surface-2 px-5 py-2.5 font-medium" pendingLabel="Copying…">Copy</ActionButton>
           </form>
         )}
       </Card>

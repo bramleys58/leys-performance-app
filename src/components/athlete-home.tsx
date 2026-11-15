@@ -5,7 +5,7 @@ import { getMyAthlete } from "@/lib/athlete";
 import { readiness, type CheckIn } from "@/lib/checkin";
 import { weekLabel, weeklyTarget } from "@/lib/weekly";
 import { WeeklyPrompt } from "@/components/weekly-prompt";
-import { WEEKDAYS, isoWeekday, todayISO, weekRange } from "@/lib/plan";
+import { WEEKDAYS, isoWeekday, todayISO, weekFilter, weekRange } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/server";
 
 export function today() {
@@ -50,7 +50,7 @@ export async function AthleteHome({ firstName }: { firstName: string }) {
   const [{ data: sessionData }, { data: logData }, { data: checkData }, { data: weeklyData }] = await Promise.all([
     supabase
       .from("sessions")
-      .select("id, name, kind, weekday, scheduled_date, is_optional, estimated_minutes, position, programs!inner(status, athlete_id), session_exercises(count)")
+      .select("id, name, kind, weekday, scheduled_date, is_optional, estimated_minutes, position, week, program_id, programs!inner(status, athlete_id, start_date, created_at), session_exercises(count)")
       .eq("programs.status", "active")
       .eq("programs.athlete_id", athlete.id),
     supabase.from("workout_logs").select("id, session_id, session_name, performed_on, finished_at").eq("athlete_id", athlete.id).gte("performed_on", monday).lte("performed_on", sunday),
@@ -58,8 +58,11 @@ export async function AthleteHome({ firstName }: { firstName: string }) {
   supabase.from("weekly_check_ins").select("id").eq("athlete_id", athlete.id).eq("week_start", weekly.weekStart).maybeSingle(),
   ]);
 
-  type S = { id: string; name: string; kind: string; weekday: number | null; scheduled_date: string | null; is_optional: boolean; estimated_minutes: number | null; position: number; session_exercises: { count: number }[] };
-  const sessions = ((sessionData ?? []) as unknown as S[]).filter((s) => !s.scheduled_date || (s.scheduled_date >= monday && s.scheduled_date <= sunday));
+  type S = { id: string; name: string; kind: string; weekday: number | null; scheduled_date: string | null; is_optional: boolean; estimated_minutes: number | null; position: number; week: number | null; program_id: string; programs: { start_date: string | null; created_at: string }; session_exercises: { count: number }[] };
+  const everySession = (sessionData ?? []) as unknown as S[];
+  // Only this week of a multi-week block, plus everything that repeats every week.
+  const runsThisWeek = weekFilter(everySession, (s) => s.programs.start_date ?? s.programs.created_at.slice(0, 10));
+  const sessions = everySession.filter((s) => runsThisWeek(s, day) && (!s.scheduled_date || (s.scheduled_date >= monday && s.scheduled_date <= sunday)));
   const logs = (logData ?? []) as { id: string; session_id: string | null; session_name: string | null; performed_on: string; finished_at: string | null }[];
   const openFree = logs.filter((l) => !l.session_id && !l.finished_at && l.performed_on === day);
 

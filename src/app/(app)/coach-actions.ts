@@ -88,18 +88,20 @@ export async function updateAthlete(fd: FormData) {
 
 export async function createProgram(fd: FormData) {
   const db = await coachDb();
-  const athleteId = String(fd.get("athlete_id"));
+  // No athlete = a template that can be copied to anyone.
+  const athleteId = text(fd, "athlete_id");
   const { data, error } = await db
     .from("programs")
     .insert({
       athlete_id: athleteId,
-      name: text(fd, "name") ?? "New block",
+      is_template: !athleteId,
+      name: text(fd, "name") ?? (athleteId ? "New block" : "New template"),
       phase: text(fd, "phase"),
-      start_date: text(fd, "start_date"),
+      start_date: athleteId ? text(fd, "start_date") : null,
     })
     .select("id")
     .single();
-  if (error || !data) go(`/athletes/${athleteId}?error=` + encodeURIComponent("Could not create the program."));
+  if (error || !data) go((athleteId ? `/athletes/${athleteId}` : "/templates") + "?error=" + encodeURIComponent("Could not create the program."));
   go(`/programs/${data.id}`);
 }
 
@@ -119,44 +121,107 @@ export async function updateProgram(fd: FormData) {
   go(`/programs/${id}?saved=1`);
 }
 
-/** Copies a program with all its sessions and rows to an athlete, as a draft. */
+/**
+ * Copies a program with all its weeks, sessions and rows, as a draft.
+ * With an athlete: a program for that athlete. Without: a new template.
+ */
 export async function copyProgram(fd: FormData) {
   const db = await coachDb();
-  const sourceId = String(fd.get("source_id"));
-  const athleteId = String(fd.get("athlete_id"));
+  const sourceId = String(fd.get("source_id") ?? "");
+  const athleteId = text(fd, "athlete_id");
+  const fail = (msg: string) => go((athleteId ? `/athletes/${athleteId}` : sourceId ? `/programs/${sourceId}` : "/templates") + "?error=" + encodeURIComponent(msg));
+  if (!sourceId) return fail("Pick a program or template to copy.");
 
-  const { data: src } = await db.from("programs").select("name, phase").eq("id", sourceId).single();
-  if (!src) go(`/athletes/${athleteId}`);
+  const { data: src } = await db.from("programs").select("name, phase, is_template").eq("id", sourceId).single();
+  if (!src) return fail("That program no longer exists.");
+  const name = text(fd, "name") ?? (athleteId ? (src.is_template ? src.name : src.name + " (copy)") : src.name.replace(/ \(copy\)$/, "") + (src.is_template ? " (copy)" : ""));
   const { data: created } = await db
     .from("programs")
-    .insert({ athlete_id: athleteId, name: src.name + " (copy)", phase: src.phase })
+    .insert({ athlete_id: athleteId, is_template: !athleteId, name, phase: src.phase, start_date: athleteId ? text(fd, "start_date") : null })
     .select("id")
     .single();
-  if (!created) go(`/athletes/${athleteId}`);
+  if (!created) return fail("Could not create the copy.");
 
-  const { data: sessions } = await db.from("sessions").select("*").eq("program_id", sourceId).order("position");
-  for (const s of sessions ?? []) {
-    const { id: oldId, created_at: _c, program_id: _p, ...rest } = s;
-    void _c;
-    void _p;
-    const { data: newSession } = await db
-      .from("sessions")
-      .insert({ ...rest, program_id: created.id })
-      .select("id")
-      .single();
-    if (!newSession) continue;
-    const { data: rows } = await db.from("session_exercises").select("*").eq("session_id", oldId);
-    if (rows?.length) {
-      await db.from("session_exercises").insert(
-        rows.map(({ id: _id, session_id: _sid, ...r }) => {
-          void _id;
-          void _sid;
-          return { ...r, session_id: newSession.id };
-        }),
-      );
-    }
+  const { error } = await db.rpc("clone_sessions", { p_from_program: sourceId, p_to_program: created.id });
+  if (error) {
+    await db.from("programs").delete().eq("id", created.id);
+    return fail("Could not copy the sessions.");
   }
-  go(`/programs/${created.id}`);
+  go(`/programs/${created.id}?copied=1`);
+}
+
+export async function deleteProgram(fd: FormData) {
+  const db = await coachDb();
+  const id = String(fd.get("id"));
+  const { data: program } = await db.from("programs").select("athlete_id").eq("id", id).maybeSingle();
+  // Logged workouts stay in the athlete's history: they keep their own copy of the names and numbers.
+  await db.from("programs").delete().eq("id", id);
+  go(program?.athlete_id ? `/athletes/${program.athlete_id}` : "/templates");
+}
+
+// -------------------------------------------------------------------- weeks
+
+/**
+ * Adds a week at the end of the block as a copy of an existing week.
+ * A program without weeks first becomes week 1. Targets can step up in the copy.
+ */
+export async function copyWeek(programId: string, fd: FormData) {
+  const db = await coachDb();
+  const back = `/programs/${programId}`;
+  const { data: sessions } = await db.from("sessions").select("id, week").eq("program_id", programId);
+  const list = sessions ?? [];
+  if (list.length === 0) go(back + "?error=" + encodeURIComponent("Add at least one session first."));
+
+  let last = Math.max(0, ...list.map((s) => s.week ?? 0));
+  if (last === 0) {
+    // Not a multi-week block yet: what is there becomes week 1.
+    await db.from("sessions").update({ week: 1 }).eq("program_id", programId).is("week", null);
+    last = 1;
+  }
+  const from = Math.min(Math.max(int(fd, "from_week") ?? last, 1), last);
+  const times = Math.min(Math.max(int(fd, "times") ?? 1, 1), 12);
+  const percent = num(fd, "percent_delta") ?? 0;
+  const weight = num(fd, "weight_delta") ?? 0;
+
+  // Each new week builds on the one before it, so the steps add up week after week.
+  let source = from;
+  for (let i = 0; i < times; i++) {
+    const to = last + 1 + i;
+    const { error } = await db.rpc("clone_sessions", {
+      p_from_program: programId,
+      p_to_program: programId,
+      p_from_week: source,
+      p_to_week: to,
+      p_percent_delta: percent,
+      p_weight_delta: weight,
+    });
+    if (error) go(back + "?error=" + encodeURIComponent("Could not copy the week."));
+    source = to;
+  }
+  go(back + `?saved=1#week-${last + 1}`);
+}
+
+/** Removes a week and moves the later weeks one up. */
+export async function deleteWeek(programId: string, week: number) {
+  const db = await coachDb();
+  await db.from("sessions").delete().eq("program_id", programId).eq("week", week);
+  const { data: later } = await db.from("sessions").select("id, week").eq("program_id", programId).gt("week", week);
+  await Promise.all((later ?? []).map((s) => db.from("sessions").update({ week: (s.week as number) - 1 }).eq("id", s.id)));
+  go(`/programs/${programId}?saved=1`);
+}
+
+/** Copies one session with its exercises, into the same week or another one. */
+export async function duplicateSession(programId: string, sessionId: string, fd: FormData) {
+  const db = await coachDb();
+  const toWeek = int(fd, "to_week");
+  const { error } = await db.rpc("clone_sessions", {
+    p_from_program: programId,
+    p_to_program: programId,
+    p_session: sessionId,
+    p_to_week: toWeek && toWeek >= 1 ? toWeek : null,
+    p_name_suffix: toWeek ? "" : " (copy)",
+  });
+  go(`/programs/${programId}` + (error ? "?error=" + encodeURIComponent("Could not copy the session.") : "?saved=1"));
 }
 
 // ----------------------------------------------------------------- sessions
@@ -167,6 +232,7 @@ export async function createSession(fd: FormData) {
   const kind = text(fd, "kind");
   const { count } = await db.from("sessions").select("id", { count: "exact", head: true }).eq("program_id", programId);
   const weekday = int(fd, "weekday");
+  const week = int(fd, "week");
   const { data } = await db
     .from("sessions")
     .insert({
@@ -176,6 +242,7 @@ export async function createSession(fd: FormData) {
       weekday: weekday && weekday >= 1 && weekday <= 7 ? weekday : null,
       is_optional: fd.get("is_optional") === "on",
       position: count ?? 0,
+      week: week && week >= 1 ? week : null,
     })
     .select("id")
     .single();
@@ -199,6 +266,7 @@ export async function updateSession(fd: FormData) {
       estimated_minutes: int(fd, "estimated_minutes"),
       is_optional: fd.get("is_optional") === "on",
       instructions: text(fd, "instructions"),
+      ...(fd.has("week") ? { week: (int(fd, "week") ?? 0) >= 1 ? int(fd, "week") : null } : {}),
     })
     .eq("id", id);
   go(`/programs/${programId}/sessions/${id}?saved=1`);
@@ -289,6 +357,7 @@ async function persistRows(db: Db, fd: FormData, sessionId: string) {
           tempo: text(fd, f("tempo")),
           target_type: targetType === "weight" || targetType === "percent" || targetType === "rpe" ? targetType : "none",
           target_value: num(fd, f("target_value")),
+          max_exercise_id: targetType === "percent" ? text(fd, f("max_exercise_id")) : null,
           ask_rpe: fd.get(f("ask_rpe")) === "on",
           coaching_note: text(fd, f("coaching_note")),
           video_url: text(fd, f("video_url")),

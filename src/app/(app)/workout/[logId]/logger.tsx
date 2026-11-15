@@ -31,6 +31,7 @@ type Draft = Partial<Record<Field, string>>;
 
 const keyOf = (rowId: string, setNumber: number) => `${rowId}:${setNumber}`;
 const todayLocal = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Brussels" }).format(new Date());
+const clockNow = () => Date.now();
 const rowKey = (i: SetInput) => i.sessionExerciseId ?? i.workoutExerciseId;
 const sameSet = (a: SetInput, b: SetInput) => rowKey(a) === rowKey(b) && a.setNumber === b.setNumber;
 const trim = (n: number) => String(Math.round(n * 100) / 100);
@@ -72,6 +73,7 @@ export function Logger(props: Props) {
   const [skipAsk, setSkipAsk] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [view, setView] = useState<"log" | "finish">("log");
+  const [lastSetAt, setLastSetAt] = useState<number | null>(null); // when the last set was ticked, for the rest clock
 
   /** Number of set rows shown for an exercise: the plan, plus added sets, never fewer than what is logged. */
   const setCount = useCallback(
@@ -228,6 +230,7 @@ export function Logger(props: Props) {
     setLogged(next);
     clearDraft(k);
     persist(entry, row);
+    setLastSetAt(clockNow());
   };
 
   const edit = (row: LoggerRow, setNumber: number, field: Field, value: string) =>
@@ -383,6 +386,10 @@ export function Logger(props: Props) {
   // Past six hours the clock is clearly left running: stop showing it.
   const clock = elapsed == null || elapsed > 6 * 3600 ? null : elapsed >= 3600 ? `${Math.floor(elapsed / 3600)}:${pad(Math.floor((elapsed % 3600) / 60))}:${pad(elapsed % 60)}` : `${pad(Math.floor(elapsed / 60))}:${pad(elapsed % 60)}`;
 
+  // Time since the last ticked set, shown for ten minutes.
+  const restSec = lastSetAt && now ? Math.max(0, Math.floor((now - lastSetAt) / 1000)) : null;
+  const rest = restSec != null && restSec < 600 ? `${Math.floor(restSec / 60)}:${pad(restSec % 60)}` : null;
+
   const total = rows.reduce((t, r) => t + setCount(r), 0);
   const doneCount = logged.size;
   const pct = total ? Math.min(100, Math.round((doneCount / total) * 100)) : 0;
@@ -397,8 +404,13 @@ export function Logger(props: Props) {
               ⏱ {clock}
             </span>
           )}
+          {rest && (
+            <span className="rounded-md border border-border px-2 py-0.5 text-text" aria-label={`Rest ${rest}`}>
+              rest {rest}
+            </span>
+          )}
           <span>
-            {doneCount}/{total} sets
+            {doneCount}/{total}
           </span>
         </span>
         <button type="button" onClick={() => setView(view === "finish" ? "log" : "finish")} className="rounded-lg bg-ok px-3 py-1.5 font-semibold text-white">
@@ -508,6 +520,16 @@ export function Logger(props: Props) {
         : row.targetType === "rpe" && row.targetValue != null
           ? `target RPE ${row.targetValue}`
           : null;
+    // Plates per side for the next open set of a barbell lift (20 kg bar, 45 lb in pounds).
+    let plates: string | null = null;
+    if (row.barbell && cols.weight) {
+      let nextSet = 0;
+      for (let n = 1; n <= count && !nextSet; n++) if (!logged.has(keyOf(row.id, n))) nextSet = n;
+      const w = nextSet ? parse(shown(row, nextSet, "weight") || suggestion(row, nextSet, "weight")) : null;
+      const bar = unit === "lbs" ? 45 : 20;
+      if (w != null && w > bar) plates = `Set ${nextSet}: ${trim(w)} ${unit} = ${trim((w - bar) / 2)} per side on a ${bar} ${unit} bar`;
+    }
+
     const planLine = [row.sets && row.reps ? `${row.sets} × ${row.reps}` : row.reps, row.tempo ? `tempo ${row.tempo}` : null, targetLine].filter(Boolean).join(" · ");
 
     return (
@@ -654,6 +676,8 @@ export function Logger(props: Props) {
             );
           })}
         </div>
+
+        {plates && <p className="mt-2 text-center text-xs text-muted">{plates}</p>}
 
         <button type="button" onClick={() => setExtra((x) => ({ ...x, [row.id]: (x[row.id] ?? 0) + 1 }))} className="mt-2 w-full rounded-lg bg-surface-2 py-2 text-sm text-muted">
           + Add set

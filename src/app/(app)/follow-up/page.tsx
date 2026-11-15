@@ -27,6 +27,12 @@ export default async function FollowUpPage() {
   supabase.from("weekly_check_ins").select("*").eq("week_start", target.weekStart).order("created_at", { ascending: false }),
   ]);
 
+  // Opening follow-up counts as reading the weekly check-ins shown on it.
+  const unreadIds = ((weeklies ?? []) as (WeeklyCheckIn & { coach_seen_at: string | null })[]).filter((w) => !w.coach_seen_at).map((w) => w.id);
+  if (unreadIds.length > 0) await supabase.from("weekly_check_ins").update({ coach_seen_at: new Date().toISOString() }).in("id", unreadIds);
+  // Older unread ones (from weeks no longer shown here) are marked as read too, so the home card clears.
+  await supabase.from("weekly_check_ins").update({ coach_seen_at: new Date().toISOString() }).is("coach_seen_at", null).lt("week_start", target.weekStart);
+
   type S = { id: string; name: string; weekday: number | null; kind: string; is_optional: boolean; programs: { athlete_id: string } };
   type L = { id: string; athlete_id: string; session_id: string | null; session_name: string | null; performed_on: string; finished_at: string | null; session_rpe: number | null; duration_minutes: number | null; comment: string | null; set_logs: { count: number }[] };
   const allSessions = (sessions ?? []) as unknown as S[];

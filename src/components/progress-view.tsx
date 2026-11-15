@@ -40,6 +40,7 @@ export function ProgressView({ data, unit, historyHref }: { data: Data; unit: "k
         </p>
         <p className="text-sm text-muted">
           {thisWeek.sessions} session{thisWeek.sessions === 1 ? "" : "s"} · last week {n0(toUnit(lastWeek.tonnage))} {unit} in {lastWeek.sessions}
+          {data.avgMinutes != null ? ` · average workout ${data.avgMinutes} min` : ""}
         </p>
 
         {/* One series, so no legend: the title names it. Every bar has a tooltip and the table below has the numbers. */}

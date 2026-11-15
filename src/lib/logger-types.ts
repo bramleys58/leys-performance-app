@@ -19,6 +19,7 @@ export type LoggerRow = {
   videoUrl: string | null;
   tracking: TrackingType;
   weightStep: number;
+  barbell: boolean; // loaded on a barbell: show plates per side
   plannedKg: number | null;
   previous: { setNumber: number; weight: number | null; reps: number | null; seconds: number | null; distance: number | null }[];
 };
@@ -34,7 +35,13 @@ export type LoggedSet = {
   skipped: boolean;
 };
 
-type ExerciseInfo = { tracking_type: TrackingType; weight_step: number | string; video_url: string | null } | null;
+type ExerciseInfo = { tracking_type: TrackingType; weight_step: number | string; video_url: string | null; equipment?: string | null } | null;
+
+/** True for lifts loaded on a standard barbell (not EZ, trap or Smith bars, whose weight differs). */
+export function isBarbell(equipment: string | null | undefined): boolean {
+  const e = (equipment ?? "").toLowerCase();
+  return /\bbarbell\b/.test(e) && !/ez|trap|smith|football|safety/.test(e);
+}
 type PrevRow = { set_number: number; weight: number | string | null; reps: number | null; seconds: number | string | null; distance: number | string | null };
 
 /** Builds the row for an exercise added during a workout. */
@@ -63,6 +70,7 @@ export function extraRow(
     videoUrl: info?.video_url ?? null,
     tracking: info?.tracking_type ?? "load",
     weightStep: Number(info?.weight_step ?? 2.5),
+    barbell: isBarbell(info?.equipment),
     plannedKg: null,
     previous: previous.map((p) => ({ setNumber: p.set_number, weight: n(p.weight), reps: p.reps, seconds: n(p.seconds), distance: n(p.distance) })),
   };

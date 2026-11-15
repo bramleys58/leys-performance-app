@@ -4,7 +4,7 @@ import { Card, SecondaryButton } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { epley, roundToStep, sortRows, type PlanRow, type TrackingType } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/server";
-import { extraRow, type LoggedSet, type LoggerRow } from "@/lib/logger-types";
+import { extraRow, isBarbell, type LoggedSet, type LoggerRow } from "@/lib/logger-types";
 import { reopenWorkout } from "../../athlete-actions";
 import { Logger } from "./logger";
 
@@ -29,21 +29,21 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
     log.session_id
       ? supabase
           .from("session_exercises")
-          .select("*, exercises(tracking_type, weight_step, video_url)")
+          .select("*, exercises(tracking_type, weight_step, video_url, equipment)")
           .eq("session_id", log.session_id)
       : Promise.resolve({ data: [] as unknown[] }),
     supabase.from("set_logs").select("*").eq("workout_log_id", logId),
     supabase
       .from("workout_exercises")
-      .select("id, exercise_id, display_name, position, superset_group, exercises(tracking_type, weight_step, video_url)")
+      .select("id, exercise_id, display_name, position, superset_group, exercises(tracking_type, weight_step, video_url, equipment)")
       .eq("workout_log_id", logId)
       .order("position"),
   ]);
-  type Extra = { id: string; exercise_id: string | null; display_name: string; position: number; superset_group: string | null; exercises: { tracking_type: TrackingType; weight_step: number; video_url: string | null } | null };
+  type Extra = { id: string; exercise_id: string | null; display_name: string; position: number; superset_group: string | null; exercises: { tracking_type: TrackingType; weight_step: number; video_url: string | null; equipment: string | null } | null };
   const extras = (extraData ?? []) as unknown as Extra[];
   const isFree = !log.session_id;
 
-  type Row = PlanRow & { exercises: { tracking_type: TrackingType; weight_step: number; video_url: string | null } | null };
+  type Row = PlanRow & { exercises: { tracking_type: TrackingType; weight_step: number; video_url: string | null; equipment: string | null } | null };
   const rows = sortRows((rowData ?? []) as Row[]);
   const exerciseIds = [...new Set([...rows.map((r) => r.exercise_id), ...extras.map((e) => e.exercise_id)].filter(Boolean))] as string[];
 
@@ -90,6 +90,7 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
       videoUrl: r.video_url ?? r.exercises?.video_url ?? null,
       tracking: r.exercises?.tracking_type ?? "load",
       weightStep: step,
+      barbell: isBarbell(r.exercises?.equipment),
       plannedKg,
       previous: previous.map((p) => ({
         setNumber: p.set_number,

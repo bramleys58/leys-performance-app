@@ -19,7 +19,7 @@ export async function getProgress(athleteId: string) {
 
   const twoWeeksAgo = new Date(new Date(todayISO() + "T12:00:00Z").getTime() - 13 * 86400000).toISOString().slice(0, 10);
   const [{ data: logs }, { data: sets }, { data: maxes }, { data: results }, { data: tests }, { data: checkRows }] = await Promise.all([
-    supabase.from("workout_logs").select("id, performed_on, finished_at").eq("athlete_id", athleteId).gte("performed_on", from),
+    supabase.from("workout_logs").select("id, performed_on, finished_at, duration_minutes").eq("athlete_id", athleteId).gte("performed_on", from),
     supabase
       .from("set_logs")
       .select("exercise_id, exercise_name, weight, reps, workout_logs!inner(performed_on), exercises(tracking_type, name)")
@@ -121,5 +121,8 @@ export async function getProgress(athleteId: string) {
     firstWeight: weights.length > 1 ? weights[weights.length - 1] : null,
   };
 
-  return { weeks, prs, maxes: maxList, tests: testSummaries, wellness };
+  const times = ((logs ?? []) as { duration_minutes: number | null }[]).map((l) => l.duration_minutes).filter((v): v is number => v != null && v > 0);
+  const avgMinutes = times.length ? Math.round(times.reduce((a, b) => a + b, 0) / times.length) : null;
+
+  return { weeks, prs, maxes: maxList, tests: testSummaries, wellness, avgMinutes };
 }

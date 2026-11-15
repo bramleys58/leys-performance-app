@@ -6,6 +6,8 @@ export type AthleteRow = {
   full_name: string;
   unit: "kg" | "lbs";
   notes_language: "en" | "nl";
+  /** Just logs their own training: no daily or weekly check-ins. */
+  tracking_only: boolean;
 };
 
 /** The athlete profile linked to the logged-in user, or null. */
@@ -17,7 +19,7 @@ export const getMyAthlete = cache(async function getMyAthlete(): Promise<Athlete
   if (!user) return null;
   const { data } = await supabase
     .from("athletes")
-    .select("id, full_name, unit, notes_language")
+    .select("id, full_name, unit, notes_language, tracking_only")
     .eq("user_id", user.id)
     .maybeSingle();
   return (data as AthleteRow | null) ?? null;

@@ -151,9 +151,13 @@ export async function AthleteHome({ firstName }: { firstName: string }) {
   return (
     <div className="space-y-6">
       {heading}
-      {weekly.isSunday && !weeklyDone && <WeeklyPrompt weekLabel={weekLabel(weekly.weekStart)} />}
-      {weeklyCard}
-      {checkInCard}
+      {!athlete.tracking_only && (
+        <>
+          {weekly.isSunday && !weeklyDone && <WeeklyPrompt weekLabel={weekLabel(weekly.weekStart)} />}
+          {weeklyCard}
+          {checkInCard}
+        </>
+      )}
 
       {sessions.length === 0 ? (
         <>

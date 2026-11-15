@@ -15,7 +15,7 @@ export default async function AthletesPage({ searchParams }: PageProps<"/athlete
   const supabase = await createClient();
   let query = supabase
     .from("athletes")
-    .select("id, full_name, sport, status, is_in_person, user_id, email")
+    .select("id, full_name, sport, status, is_in_person, tracking_only, user_id, email")
     .order("full_name");
   if (!showAll) query = query.eq("status", "active");
   const { data: athletes } = await query;
@@ -41,7 +41,7 @@ export default async function AthletesPage({ searchParams }: PageProps<"/athlete
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium">{a.full_name}</p>
                   <p className="truncate text-sm text-muted">
-                    {[a.sport, a.is_in_person ? "In person" : "Online", a.status !== "active" ? a.status : null]
+                    {[a.sport, a.tracking_only ? "Tracking only" : a.is_in_person ? "In person" : "Online", a.status !== "active" ? a.status : null]
                       .filter(Boolean)
                       .join(" · ")}
                   </p>
@@ -74,6 +74,9 @@ export default async function AthletesPage({ searchParams }: PageProps<"/athlete
           </div>
           <label className="flex items-center gap-2 text-sm text-muted">
             <input type="checkbox" name="is_in_person" /> In-person client
+          </label>
+          <label className="flex items-center gap-2 text-sm text-muted">
+            <input type="checkbox" name="tracking_only" /> Tracking only: just logs their own workouts, no check-ins
           </label>
           <PrimaryButton type="submit">Add athlete</PrimaryButton>
         </form>

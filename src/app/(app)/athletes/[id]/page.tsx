@@ -201,6 +201,9 @@ export default async function AthletePage({ params, searchParams }: PageProps<"/
           <label className="flex items-center gap-2 text-sm text-muted">
             <input type="checkbox" name="is_in_person" defaultChecked={athlete.is_in_person} /> In-person client
           </label>
+          <label className="flex items-center gap-2 text-sm text-muted">
+            <input type="checkbox" name="tracking_only" defaultChecked={athlete.tracking_only} /> Tracking only (no daily or weekly check-ins)
+          </label>
           <label className="block">
             <span className="mb-1.5 block text-sm text-muted">Private notes</span>
             <textarea name="notes" rows={3} defaultValue={athlete.notes ?? ""} className={inputClass} />

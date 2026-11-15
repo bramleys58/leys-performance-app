@@ -55,6 +55,7 @@ export async function createAthlete(fd: FormData) {
       unit: text(fd, "unit") === "lbs" ? "lbs" : "kg",
       notes_language: text(fd, "notes_language") === "nl" ? "nl" : "en",
       is_in_person: fd.get("is_in_person") === "on",
+      tracking_only: fd.get("tracking_only") === "on",
     })
     .select("id")
     .single();
@@ -78,6 +79,7 @@ export async function updateAthlete(fd: FormData) {
       notes_language: text(fd, "notes_language") === "nl" ? "nl" : "en",
       status: status === "paused" || status === "archived" ? status : "active",
       is_in_person: fd.get("is_in_person") === "on",
+      tracking_only: fd.get("tracking_only") === "on",
       notes: text(fd, "notes"),
     })
     .eq("id", id);

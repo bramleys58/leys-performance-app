@@ -34,6 +34,18 @@ const todayLocal = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Br
 const clockNow = () => Date.now();
 const rowKey = (i: SetInput) => i.sessionExerciseId ?? i.workoutExerciseId;
 const sameSet = (a: SetInput, b: SetInput) => rowKey(a) === rowKey(b) && a.setNumber === b.setNumber;
+
+/** A set that still has to reach the server: a save, or a removal (un-ticked). Kept on the phone until it does. */
+type Pending = SetInput & { remove?: boolean; stamp: number; failed?: boolean };
+const outboxKey = (workoutLogId: string) => `lp-outbox-${workoutLogId}`;
+function readOutbox(workoutLogId: string): Pending[] {
+  try {
+    const list = JSON.parse(window.localStorage.getItem(outboxKey(workoutLogId)) ?? "[]");
+    return Array.isArray(list) ? list.filter((i) => i && typeof i.setNumber === "number" && typeof i.stamp === "number").map((i) => ({ ...i, failed: true })) : [];
+  } catch {
+    return [];
+  }
+}
 const trim = (n: number) => String(Math.round(n * 100) / 100);
 const parse = (v: string | undefined) => {
   if (v == null || v.trim() === "") return null;
@@ -69,7 +81,8 @@ export function Logger(props: Props) {
   const [logged, setLogged] = useState(() => new Map(props.initialLogged.map((s) => [keyOf(s.rowId, s.setNumber), s])));
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [extra, setExtra] = useState<Record<string, number>>({});
-  const [unsaved, setUnsaved] = useState<SetInput[]>([]);
+  const [unsaved, setUnsaved] = useState<Pending[]>([]);
+  const [outboxLoaded, setOutboxLoaded] = useState(false);
   const [skipAsk, setSkipAsk] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [view, setView] = useState<"log" | "finish">("log");
@@ -86,21 +99,70 @@ export function Logger(props: Props) {
   );
 
   // ---------------------------------------------------------------- saving
-  const send = useCallback(async (input: SetInput) => {
+  // Every set goes into an outbox first and only leaves it once the server has it.
+  // The outbox lives on the phone, so a dead spot in the gym or a reload loses nothing.
+  const send = useCallback(async (input: Pending) => {
+    setUnsaved((q) => (q.some((i) => sameSet(i, input) && i.stamp > input.stamp) ? q : [...q.filter((i) => !sameSet(i, input)), input]));
     try {
-      const res = await saveSet(input);
+      const res = input.remove
+        ? await deleteSet(input.workoutLogId, rowKey(input)!, input.workoutExerciseId ? "extra" : "plan", input.setNumber)
+        : await saveSet(input);
       if (!res.ok) throw new Error("not saved");
-      setUnsaved((q) => q.filter((i) => !sameSet(i, input)));
+      setUnsaved((q) => q.filter((i) => !(sameSet(i, input) && i.stamp === input.stamp)));
     } catch {
-      setUnsaved((q) => [...q.filter((i) => !sameSet(i, input)), input]);
+      // Stays in the outbox for the next try.
+      setUnsaved((q) => q.map((i) => (sameSet(i, input) && i.stamp === input.stamp ? { ...i, failed: true } : i)));
     }
   }, []);
 
   const retryAll = useCallback(() => unsaved.forEach((i) => void send(i)), [unsaved, send]);
+
+  // Pick up what an earlier visit could not send: show it as logged and try again.
+  const { workoutLogId } = props;
   useEffect(() => {
+    const t = setTimeout(() => {
+      const waiting = readOutbox(workoutLogId);
+      if (waiting.length > 0) {
+        setLogged((m) => {
+          const next = new Map(m);
+          for (const i of waiting) {
+            const rowId = rowKey(i);
+            if (!rowId) continue;
+            if (i.remove) next.delete(keyOf(rowId, i.setNumber));
+            else next.set(keyOf(rowId, i.setNumber), { rowId, setNumber: i.setNumber, weight: i.weight, reps: i.reps, seconds: i.seconds, distance: i.distance, rpe: i.rpe, skipped: i.skipped });
+          }
+          return next;
+        });
+        waiting.forEach((i) => void send(i));
+      }
+      setOutboxLoaded(true);
+    }, 0);
+    return () => clearTimeout(t);
+  }, [workoutLogId, send]);
+
+  useEffect(() => {
+    if (!outboxLoaded) return;
+    try {
+      if (unsaved.length > 0) window.localStorage.setItem(outboxKey(workoutLogId), JSON.stringify(unsaved));
+      else window.localStorage.removeItem(outboxKey(workoutLogId));
+    } catch {
+      // Private mode or full storage: the sets still wait in memory while this screen is open.
+    }
+  }, [unsaved, outboxLoaded, workoutLogId]);
+
+  // Keep trying while something waits: when the connection returns, when the app comes back to the front, and every 15 seconds.
+  useEffect(() => {
+    if (unsaved.length === 0) return;
+    const onVisible = () => document.visibilityState === "visible" && retryAll();
     window.addEventListener("online", retryAll);
-    return () => window.removeEventListener("online", retryAll);
-  }, [retryAll]);
+    document.addEventListener("visibilitychange", onVisible);
+    const timer = setInterval(retryAll, 15000);
+    return () => {
+      window.removeEventListener("online", retryAll);
+      document.removeEventListener("visibilitychange", onVisible);
+      clearInterval(timer);
+    };
+  }, [unsaved.length, retryAll]);
 
   // Keep the screen on while logging, where the browser supports it.
   useEffect(() => {
@@ -116,8 +178,11 @@ export function Logger(props: Props) {
     };
   }, []);
 
-  const persist = (entry: LoggedSet, r: LoggerRow) => {
+  const persist = (entry: LoggedSet, r: LoggerRow, remove = false) => {
     void send({
+      remove,
+      stamp: clockNow(),
+      loggedAt: new Date(clockNow()).toISOString(),
       workoutLogId: props.workoutLogId,
       athleteId: props.athleteId,
       sessionExerciseId: r.source === "plan" ? r.id : null,
@@ -221,8 +286,7 @@ export function Logger(props: Props) {
           },
         }));
       }
-      setUnsaved((q) => q.filter((i) => !(rowKey(i) === row.id && i.setNumber === setNumber)));
-      void deleteSet(props.workoutLogId, row.id, row.source, setNumber);
+      persist(saved, row, true);
       return;
     }
     const entry = entryFor(row, setNumber);
@@ -392,6 +456,7 @@ export function Logger(props: Props) {
 
   const total = rows.reduce((t, r) => t + setCount(r), 0);
   const doneCount = logged.size;
+  const waiting = unsaved.filter((i) => i.failed).length; // sets that could not be sent yet
   const pct = total ? Math.min(100, Math.round((doneCount / total) * 100)) : 0;
 
   const header = (
@@ -417,9 +482,9 @@ export function Logger(props: Props) {
       <div className="h-1.5 overflow-hidden rounded-full bg-surface-2">
         <div className="h-full bg-accent transition-all" style={{ width: `${pct}%` }} />
       </div>
-      {unsaved.length > 0 && (
+      {waiting > 0 && (
         <button type="button" onClick={retryAll} className="w-full rounded-xl border border-accent/50 bg-surface-2 px-3 py-2 text-sm text-accent">
-          {unsaved.length} set{unsaved.length > 1 ? "s" : ""} not saved yet. Tap to retry.
+          {waiting} set{waiting > 1 ? "s" : ""} kept on this phone, waiting for a connection. They send by themselves, or tap to try now.
         </button>
       )}
     </div>
@@ -478,7 +543,7 @@ export function Logger(props: Props) {
           <button disabled={unsaved.length > 0} className="w-full rounded-xl bg-accent px-4 py-4 text-lg font-semibold text-accent-text disabled:opacity-50">
             Finish
           </button>
-          {unsaved.length > 0 && <p className="text-center text-sm text-accent">Waiting for unsaved sets before finishing.</p>}
+          {waiting > 0 && <p className="text-center text-sm text-accent">{waiting} set{waiting > 1 ? "s are" : " is"} still waiting for a connection. Finishing works as soon as they are sent.</p>}
         </form>
         <form action={discardWorkout} className="space-y-2 border-t border-border pt-4">
           <input type="hidden" name="workout_log_id" value={props.workoutLogId} />

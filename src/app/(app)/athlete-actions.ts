@@ -72,11 +72,17 @@ export type SetInput = {
   plannedReps: string | null;
   skipped: boolean;
   skipReason: string | null;
+  /** When the set was ticked on the phone. Used when it could only be sent later (bad signal). */
+  loggedAt?: string;
 };
 
 /** Saves one set. Saving the same set again replaces it. */
 export async function saveSet(input: SetInput): Promise<{ ok: boolean }> {
   await requireUser();
+  // Trust the phone's time only when it is plausible: not in the future, not older than a week.
+  const ticked = input.loggedAt ? Date.parse(input.loggedAt) : NaN;
+  const now = Date.now();
+  const loggedAt = Number.isFinite(ticked) && ticked <= now + 60_000 && ticked > now - 7 * 86_400_000 ? new Date(ticked) : new Date(now);
   const supabase = await createClient();
   const { error } = await supabase.from("set_logs").upsert(
     {
@@ -96,7 +102,7 @@ export async function saveSet(input: SetInput): Promise<{ ok: boolean }> {
       planned_reps: input.plannedReps,
       skipped: input.skipped,
       skip_reason: input.skipReason,
-      logged_at: new Date().toISOString(),
+      logged_at: loggedAt.toISOString(),
     },
     { onConflict: input.workoutExerciseId ? "workout_log_id,workout_exercise_id,set_number" : "workout_log_id,session_exercise_id,set_number" },
   );

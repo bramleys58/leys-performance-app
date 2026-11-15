@@ -4,6 +4,7 @@ import { WeeklyAnswers } from "@/components/weekly-answers";
 import { requireCoach } from "@/lib/auth";
 import { weekLabel, weeklyTarget, type WeeklyCheckIn } from "@/lib/weekly";
 import { flags as checkFlags, readiness, type CheckIn } from "@/lib/checkin";
+import { complianceFor, fallingBehind, isRealPain, lastMondays } from "@/lib/compliance";
 import { WEEKDAYS, isoWeekday, todayISO, weekFilter, weekRange } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/server";
 
@@ -16,16 +17,20 @@ export default async function FollowUpPage() {
   const weekday = isoWeekday();
   const { monday, sunday } = weekRange(day);
   const twoWeeksAgo = new Date(new Date(day + "T12:00:00Z").getTime() - 14 * 86400000).toISOString().slice(0, 10);
+  const WEEKS = 6;
+  const mondays = lastMondays(day, WEEKS);
 
   // The most recent finished week from Monday to Tuesday, the current week after that.
   const target = weeklyTarget(day, weekday);
-  const [{ data: athletes }, { data: sessions }, { data: logs }, { data: checks }, { data: weeklies }] = await Promise.all([
+  const [{ data: athletes }, { data: sessions }, { data: logs }, { data: checks }, { data: weeklies }, { data: injuries }] = await Promise.all([
     supabase.from("athletes").select("id, full_name, sport").eq("status", "active").order("full_name"),
     supabase.from("sessions").select("id, name, weekday, kind, is_optional, week, program_id, programs!inner(athlete_id, status, start_date, created_at)").eq("programs.status", "active"),
-    supabase.from("workout_logs").select("id, athlete_id, session_id, session_name, performed_on, finished_at, session_rpe, duration_minutes, comment, set_logs(count)").gte("performed_on", twoWeeksAgo).order("performed_on", { ascending: false }),
+    supabase.from("workout_logs").select("id, athlete_id, session_id, session_name, performed_on, finished_at, session_rpe, duration_minutes, comment, set_logs(count)").gte("performed_on", mondays[0] < twoWeeksAgo ? mondays[0] : twoWeeksAgo).order("performed_on", { ascending: false }),
     supabase.from("check_ins").select("*").eq("day", day),
-  supabase.from("weekly_check_ins").select("*").eq("week_start", target.weekStart).order("created_at", { ascending: false }),
+    supabase.from("weekly_check_ins").select("*").eq("week_start", target.weekStart).order("created_at", { ascending: false }),
+    supabase.from("injury_notes").select("athlete_id, area").eq("status", "open"),
   ]);
+  const openInjuries = (injuries ?? []) as { athlete_id: string; area: string | null }[];
 
   // Opening follow-up counts as reading the weekly check-ins shown on it.
   const unreadIds = ((weeklies ?? []) as (WeeklyCheckIn & { coach_seen_at: string | null })[]).filter((w) => !w.coach_seen_at).map((w) => w.id);
@@ -51,11 +56,17 @@ export default async function FollowUpPage() {
     const flags: string[] = [];
     if (missed.length >= 2) flags.push(`${missed.length} missed this week`);
     if (last?.session_rpe != null && last.session_rpe >= 9) flags.push(`last session RPE ${last.session_rpe}`);
-    if (planned.length > 0 && mine.length === 0) flags.push("nothing logged in 14 days");
+    if (planned.length > 0 && !mine.some((l) => l.performed_on >= twoWeeksAgo)) flags.push("nothing logged in 14 days");
+    const weeks = complianceFor(a.id, everySession, allLogs, mondays);
+    if (fallingBehind(weeks)) flags.push("under half of the plan two weeks in a row");
+    const hurt = openInjuries.filter((i) => i.athlete_id === a.id);
+    if (hurt.length > 0) flags.push(`open injury: ${hurt.map((i) => i.area ?? "note").join(", ")}`);
+    const weekly = ((weeklies ?? []) as WeeklyCheckIn[]).find((w) => w.athlete_id === a.id);
+    if (weekly && isRealPain(weekly.pain)) flags.push("pain reported in weekly check-in");
     const comment = thisWeek.find((l) => l.comment)?.comment ?? null;
     const check = ((checks ?? []) as (CheckIn & { athlete_id: string })[]).find((c) => c.athlete_id === a.id) ?? null;
     if (check) flags.push(...checkFlags(check));
-    return { a, planned: planned.length, done, missed, last, flags, comment, check };
+    return { a, planned: planned.length, done, missed, last, flags, comment, check, weeks };
   });
 
   const active = rows.filter((r) => r.planned > 0);
@@ -123,6 +134,51 @@ export default async function FollowUpPage() {
           </li>
         ))}
       </ul>
+
+      {rows.some((r) => r.weeks.some((c) => c.planned > 0 || c.free > 0)) && (
+        <section className="space-y-3">
+          <h2 className="pt-2 text-xs font-semibold tracking-[0.2em] text-muted">PLANNED VS DONE · LAST {WEEKS} WEEKS</h2>
+          <div className="overflow-x-auto rounded-2xl border border-border bg-surface">
+            <table className="w-full min-w-[30rem] text-sm">
+              <thead>
+                <tr className="text-xs text-muted">
+                  <th className="px-4 py-2.5 text-left font-medium">Athlete</th>
+                  {mondays.map((m, i) => (
+                    <th key={m} className="px-2 py-2.5 text-center font-medium">
+                      {i === mondays.length - 1 ? "now" : weekLabel(m).split(" to ")[0]}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {rows
+                  .filter((r) => r.weeks.some((c) => c.planned > 0 || c.free > 0))
+                  .map((r) => (
+                    <tr key={r.a.id}>
+                      <td className="max-w-40 truncate px-4 py-2.5">
+                        <Link href={`/athletes/${r.a.id}/calendar`} className="hover:underline">
+                          {r.a.full_name}
+                        </Link>
+                      </td>
+                      {r.weeks.map((c, i) => {
+                        const current = i === r.weeks.length - 1;
+                        const ratio = c.planned > 0 ? c.done / c.planned : null;
+                        const tone = ratio == null || current ? "text-muted" : ratio >= 1 ? "text-ok" : ratio >= 0.5 ? "text-text" : "text-accent";
+                        return (
+                          <td key={c.monday} className={`px-2 py-2.5 text-center tabular-nums ${tone}`}>
+                            {c.planned > 0 ? `${c.done}/${c.planned}` : c.free > 0 ? "" : "–"}
+                            {c.free > 0 && <span className="text-xs text-muted">{c.planned > 0 ? " " : ""}+{c.free}</span>}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-muted">Done of planned sessions per week. +1 is a free workout or a session outside that week&apos;s plan. Green is everything done, red is under half. Weeks before a program started only show what was logged.</p>
+        </section>
+      )}
     </div>
   );
 }

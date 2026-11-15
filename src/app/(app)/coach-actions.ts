@@ -622,3 +622,37 @@ export async function inviteAthlete(athleteId: string) {
   }
   go(back + "?invited=1");
 }
+
+// --------------------------------------------------------------- injury log
+
+/** Adds a note to an athlete's injury log (coach only). */
+export async function addInjuryNote(athleteId: string, fd: FormData) {
+  const db = await coachDb();
+  const back = `/athletes/${athleteId}/injuries`;
+  const note = text(fd, "note");
+  if (!note) go(back + "?error=" + encodeURIComponent("Write what is going on."));
+  const { error } = await db.from("injury_notes").insert({
+    athlete_id: athleteId,
+    day: text(fd, "day") ?? new Date().toISOString().slice(0, 10),
+    area: text(fd, "area"),
+    note,
+  });
+  go(back + (error ? "?error=" + encodeURIComponent("Could not save the note.") : "?saved=1"));
+}
+
+/** Marks an injury note as resolved, or opens it again. */
+export async function setInjuryStatus(athleteId: string, noteId: string, resolved: boolean) {
+  const db = await coachDb();
+  await db
+    .from("injury_notes")
+    .update({ status: resolved ? "resolved" : "open", resolved_on: resolved ? new Date().toISOString().slice(0, 10) : null })
+    .eq("id", noteId)
+    .eq("athlete_id", athleteId);
+  go(`/athletes/${athleteId}/injuries?saved=1`);
+}
+
+export async function deleteInjuryNote(athleteId: string, noteId: string) {
+  const db = await coachDb();
+  await db.from("injury_notes").delete().eq("id", noteId).eq("athlete_id", athleteId);
+  go(`/athletes/${athleteId}/injuries?saved=1`);
+}

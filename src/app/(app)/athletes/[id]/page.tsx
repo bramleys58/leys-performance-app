@@ -66,7 +66,7 @@ export default async function AthletePage({ params, searchParams }: PageProps<"/
         </div>
       </Card>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Link href={`/athletes/${athlete.id}/calendar`} className="rounded-2xl border border-border bg-surface px-4 py-4">
           <span className="block font-semibold">Calendar</span>
           <span className="block text-sm text-muted">Planned and done</span>
@@ -78,6 +78,10 @@ export default async function AthletePage({ params, searchParams }: PageProps<"/
         <Link href={`/athletes/${athlete.id}/maxes`} className="rounded-2xl border border-border bg-surface px-4 py-4">
           <span className="block font-semibold">Maxes</span>
           <span className="block text-sm text-muted">For % based weights</span>
+        </Link>
+        <Link href={`/athletes/${athlete.id}/injuries`} className="rounded-2xl border border-border bg-surface px-4 py-4">
+          <span className="block font-semibold">Injury log</span>
+          <span className="block text-sm text-muted">Pain and injuries</span>
         </Link>
       </div>
 

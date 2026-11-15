@@ -30,6 +30,34 @@ assert.equal(programWeek("2026-10-19", "2026-10-26", 4), 2);
 }
 console.log("plan.ts: all checks passed");
 
+{
+  const { complianceFor, fallingBehind, isRealPain, lastMondays } = await import("../src/lib/compliance.ts");
+  assert.deepEqual(lastMondays("2026-11-15", 3), ["2026-10-26", "2026-11-02", "2026-11-09"]);
+  const prog = { athlete_id: "a", start_date: "2026-11-02", created_at: "2026-10-01T00:00:00Z" };
+  const ss = [
+    { id: "s1", kind: "workout", is_optional: false, week: 1, program_id: "p", programs: prog },
+    { id: "s2", kind: "workout", is_optional: false, week: 2, program_id: "p", programs: prog },
+    { id: "s3", kind: "workout", is_optional: false, week: 2, program_id: "p", programs: prog },
+    { id: "s4", kind: "workout", is_optional: true, week: 2, program_id: "p", programs: prog },
+    { id: "s5", kind: "workout", is_optional: false, week: null, program_id: "q", programs: { ...prog, athlete_id: "b" } },
+  ];
+  const logs = [
+    { athlete_id: "a", session_id: "s1", performed_on: "2026-11-04" },
+    { athlete_id: "a", session_id: null, performed_on: "2026-11-05" },
+    { athlete_id: "a", session_id: "s2", performed_on: "2026-11-10" },
+    { athlete_id: "a", session_id: null, performed_on: "2026-10-28" },
+    { athlete_id: "b", session_id: "s5", performed_on: "2026-11-10" },
+  ];
+  const cells = complianceFor("a", ss, logs, lastMondays("2026-11-15", 3));
+  assert.deepEqual(cells.map((c) => `${c.done}/${c.planned}+${c.free}`), ["0/0+1", "1/1+1", "1/2+0"]);
+  assert.equal(fallingBehind([{ planned: 4, done: 1 }, { planned: 4, done: 1 }, { planned: 4, done: 0 }]), true);
+  assert.equal(fallingBehind([{ planned: 4, done: 1 }, { planned: 4, done: 2 }, { planned: 4, done: 0 }]), false);
+  assert.equal(fallingBehind([{ planned: 0, done: 0 }, { planned: 0, done: 0 }, { planned: 4, done: 0 }]), false);
+  for (const t of ["no", "None.", "nee", "Geen", "-", "", null, "n/a"]) assert.equal(isRealPain(t), false, String(t));
+  for (const t of ["left knee after sprints", "No pain but tight hamstring", "knie"]) assert.equal(isRealPain(t), true, t);
+  console.log("compliance.ts: all checks passed");
+}
+
 // check-in readiness
 const { readiness, flags } = await import("../src/lib/checkin.ts");
 assert.equal(readiness({ sleep_quality: 5, energy: 5, soreness: 1, stress: 1 }), 100);

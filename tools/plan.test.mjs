@@ -84,3 +84,22 @@ assert.deepEqual(weeklyTarget("2026-11-16", 1), { weekStart: "2026-11-09", weekE
 assert.deepEqual(weeklyTarget("2026-11-17", 2), { weekStart: "2026-11-09", weekEnd: "2026-11-15", due: true, isSunday: false });
 assert.deepEqual(weeklyTarget("2026-11-18", 3), { weekStart: "2026-11-16", weekEnd: "2026-11-22", due: false, isSunday: false });
 console.log("weekly.ts: all checks passed");
+
+{
+  const { incomeByMonth, packageState } = await import("../src/lib/business.ts");
+  const base = { id: "p", athlete_id: "a", name: "10 PT", kind: "sessions", sessions_total: 10, sessions_used_before: 2, price: 500, start_date: "2026-10-01", end_date: null, paid_on: "2026-10-01", notes: null, ended: false };
+  const dates = ["2026-09-20", "2026-10-02", "2026-10-09", "2026-10-16", "2026-10-23", "2026-10-30", "2026-11-06"];
+  let s = packageState(base, dates, "2026-11-16");
+  assert.deepEqual([s.used, s.left, s.running, s.alerts.join("|")], [8, 2, true, "2 sessions left"]);
+  s = packageState({ ...base, sessions_used_before: 4, paid_on: null }, dates, "2026-11-16");
+  assert.deepEqual([s.left, s.running, s.alerts.join("|")], [0, false, "not paid|all sessions used"]);
+  s = packageState({ ...base, kind: "subscription", sessions_total: null, end_date: "2026-11-20" }, dates, "2026-11-16");
+  assert.deepEqual([s.used, s.daysLeft, s.alerts.join("|")], [null, 4, "ends in 4 days"]);
+  s = packageState({ ...base, kind: "subscription", sessions_total: null, end_date: "2026-11-15" }, dates, "2026-11-16");
+  assert.deepEqual([s.running, s.alerts.join("|")], [false, "renewal was due 1 day ago"]);
+  assert.deepEqual(packageState({ ...base, ended: true, paid_on: null }, dates, "2026-11-16").alerts, []);
+  const inc = incomeByMonth([base, { ...base, price: 120.5, paid_on: "2026-11-03" }, { ...base, paid_on: null }], "2026-11-16", 3);
+  assert.deepEqual(inc, [{ month: "2026-09", total: 0 }, { month: "2026-10", total: 500 }, { month: "2026-11", total: 120.5 }]);
+  assert.equal(incomeByMonth([], "2026-01-10", 2)[0].month, "2025-12");
+  console.log("business.ts: all checks passed");
+}

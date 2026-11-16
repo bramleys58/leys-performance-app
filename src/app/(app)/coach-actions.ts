@@ -682,3 +682,73 @@ export async function removeAlternative(exerciseId: string, altId: string) {
   await db.from("exercise_alternatives").delete().eq("exercise_id", altId).eq("alternative_id", exerciseId);
   go(`/library/${exerciseId}?saved=1#alternatives`);
 }
+
+// ----------------------------------------------------------------- business
+
+/** Adds what a client bought: a pack of sessions or a subscription. */
+export async function addPackage(athleteId: string, fd: FormData) {
+  const db = await coachDb();
+  const back = `/athletes/${athleteId}/client`;
+  const kind = text(fd, "kind") === "subscription" ? "subscription" : "sessions";
+  const total = int(fd, "sessions_total");
+  if (kind === "sessions" && !(total && total > 0)) go(back + "?error=" + encodeURIComponent("Fill in how many sessions are in the pack."));
+  const price = num(fd, "price");
+  const { error } = await db.from("client_packages").insert({
+    athlete_id: athleteId,
+    name: text(fd, "name") ?? (kind === "sessions" ? `${total} sessions` : "Subscription"),
+    kind,
+    sessions_total: kind === "sessions" ? total : null,
+    sessions_used_before: Math.max(int(fd, "sessions_used_before") ?? 0, 0),
+    price: price != null && price >= 0 ? Math.round(price * 100) / 100 : null,
+    start_date: text(fd, "start_date") ?? new Date().toISOString().slice(0, 10),
+    end_date: text(fd, "end_date"),
+    paid_on: fd.get("paid") === "on" ? (text(fd, "paid_on") ?? new Date().toISOString().slice(0, 10)) : null,
+    notes: text(fd, "notes"),
+  });
+  go(back + (error ? "?error=" + encodeURIComponent("Could not save the package.") : "?saved=1"));
+}
+
+export async function markPackagePaid(athleteId: string, packageId: string, paid: boolean) {
+  const db = await coachDb();
+  await db.from("client_packages").update({ paid_on: paid ? new Date().toISOString().slice(0, 10) : null }).eq("id", packageId).eq("athlete_id", athleteId);
+  go(`/athletes/${athleteId}/client?saved=1`);
+}
+
+export async function endPackage(athleteId: string, packageId: string, ended: boolean) {
+  const db = await coachDb();
+  await db.from("client_packages").update({ ended }).eq("id", packageId).eq("athlete_id", athleteId);
+  go(`/athletes/${athleteId}/client?saved=1`);
+}
+
+/** Starts the same package again from today (or the old end date), for a renewal. */
+export async function renewPackage(athleteId: string, packageId: string) {
+  const db = await coachDb();
+  const { data: p } = await db.from("client_packages").select("*").eq("id", packageId).eq("athlete_id", athleteId).maybeSingle();
+  if (!p) go(`/athletes/${athleteId}/client`);
+  const today = new Date().toISOString().slice(0, 10);
+  const start = p.kind === "subscription" && p.end_date && p.end_date >= today ? p.end_date : today;
+  let end: string | null = null;
+  if (p.end_date) {
+    // Same length as before.
+    const length = Date.parse(p.end_date + "T12:00:00Z") - Date.parse(p.start_date + "T12:00:00Z");
+    end = new Date(Date.parse(start + "T12:00:00Z") + length).toISOString().slice(0, 10);
+  }
+  await db.from("client_packages").update({ ended: true }).eq("id", packageId);
+  const { error } = await db.from("client_packages").insert({
+    athlete_id: athleteId,
+    name: p.name,
+    kind: p.kind,
+    sessions_total: p.sessions_total,
+    price: p.price,
+    start_date: start,
+    end_date: end,
+    notes: p.notes,
+  });
+  go(`/athletes/${athleteId}/client` + (error ? "?error=" + encodeURIComponent("Could not renew.") : "?saved=1"));
+}
+
+export async function deletePackage(athleteId: string, packageId: string) {
+  const db = await coachDb();
+  await db.from("client_packages").delete().eq("id", packageId).eq("athlete_id", athleteId);
+  go(`/athletes/${athleteId}/client?saved=1`);
+}

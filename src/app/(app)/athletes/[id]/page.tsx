@@ -83,6 +83,12 @@ export default async function AthletePage({ params, searchParams }: PageProps<"/
           <span className="block font-semibold">Injury log</span>
           <span className="block text-sm text-muted">Pain and injuries</span>
         </Link>
+        {!athlete.tracking_only && (
+          <Link href={`/athletes/${athlete.id}/client`} className="rounded-2xl border border-border bg-surface px-4 py-4">
+            <span className="block font-semibold">Client</span>
+            <span className="block text-sm text-muted">Packages and payments</span>
+          </Link>
+        )}
       </div>
 
       <Card>

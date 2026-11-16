@@ -25,6 +25,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
               { href: "/library", label: "Exercise library", icon: "📚" },
             ],
           },
+          { title: "Business", links: [{ href: "/business", label: "Packages and income", icon: "💶" }] },
           ...(athlete
             ? [
                 {

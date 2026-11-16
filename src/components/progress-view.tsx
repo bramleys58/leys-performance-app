@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BodyweightChart, Sparkline } from "@/components/progress-charts";
+import { BodyweightChart, Sparkline, WeeklyWeightChart } from "@/components/progress-charts";
 import { ActionButton, Card, Notice, inputClass } from "@/components/ui";
 import { todayISO } from "@/lib/plan";
 import type { getProgress } from "@/lib/progress";
@@ -34,6 +34,8 @@ export function ProgressView({
   const empty = data.weeks.every((w) => w.tonnage === 0 && w.sessions === 0) && data.prs.length === 0 && data.maxes.length === 0 && data.tests.length === 0 && data.wellness.days.length === 0;
   const signed = (v: number, digits = 1) => `${v > 0 ? "+" : v < 0 ? "−" : "±"}${new Intl.NumberFormat("en-GB", { maximumFractionDigits: digits }).format(Math.abs(v))}`;
   const bw = data.bodyweight;
+  const weeklyMode = bw.weeksLogged >= bw.weeksNeeded && bw.weekly.length >= 2;
+  const thisWk = bw.weekly[bw.weekly.length - 1];
   const lifts = data.block?.lifts ?? [];
   const blockWeeks = lifts[0]?.weekly.length ?? 0;
 
@@ -46,7 +48,24 @@ export function ProgressView({
       {bwStatus === "saved" && <div className="mt-3"><Notice kind="ok">Weigh-in saved.</Notice></div>}
       {bwStatus === "invalid" && <div className="mt-3"><Notice kind="error">That weight doesn&apos;t look right. Fill in your weight in {unit}.</Notice></div>}
       {bwStatus === "error" && <div className="mt-3"><Notice kind="error">Could not save the weigh-in. Try again.</Notice></div>}
-      {bw.latest ? (
+      {bw.latest && weeklyMode && thisWk ? (
+        <div className="mt-3 grid grid-cols-3 gap-3">
+          <div>
+            <p className="text-2xl font-bold tabular-nums">{n1(toUnit(thisWk.avg))}</p>
+            <p className="text-xs text-muted">
+              {unit} avg, week of {short(thisWk.monday)}
+            </p>
+          </div>
+          <div>
+            <p className="text-2xl font-bold tabular-nums">{thisWk.change == null ? "–" : signed(toUnit(thisWk.change))}</p>
+            <p className="text-xs text-muted">{unit} vs week before</p>
+          </div>
+          <div>
+            <p className="text-2xl font-bold tabular-nums">{bw.ratePerWeek == null ? "–" : signed(toUnit(bw.ratePerWeek), 2)}</p>
+            <p className="text-xs text-muted">{unit} per week, last 4 weeks</p>
+          </div>
+        </div>
+      ) : bw.latest ? (
         <div className="mt-3 grid grid-cols-3 gap-3">
           <div>
             <p className="text-2xl font-bold tabular-nums">{n1(toUnit(bw.latest.kg))}</p>
@@ -66,8 +85,28 @@ export function ProgressView({
       ) : (
         <p className="mt-2 text-sm text-muted">No weigh-ins yet. Weigh in at the same moment each time, for example in the morning before breakfast.</p>
       )}
-      <BodyweightChart points={bw.points.slice(-120)} toUnit={toUnit} unit={unit} short={short} />
-      {(bw.change7 != null || bw.change30 != null) && <p className="mt-2 text-xs text-muted">Changes use the 7-day average, so one heavy or light day doesn&apos;t throw them off.</p>}
+      {weeklyMode ? (
+        <>
+          <WeeklyWeightChart weeks={bw.weekly} toUnit={toUnit} unit={unit} short={short} />
+          <p className="mt-2 text-xs text-muted">
+            Latest weigh-in: {bw.latest ? `${n1(toUnit(bw.latest.kg))} ${unit}, ${bw.latest.day === todayISO() ? "today" : short(bw.latest.day)}` : "–"}.
+          </p>
+          <details className="mt-2 text-sm">
+            <summary className="cursor-pointer text-muted">Show daily weigh-ins</summary>
+            <BodyweightChart points={bw.points.slice(-60)} toUnit={toUnit} unit={unit} short={short} />
+          </details>
+        </>
+      ) : (
+        <>
+          <BodyweightChart points={bw.points.slice(-120)} toUnit={toUnit} unit={unit} short={short} />
+          {(bw.change7 != null || bw.change30 != null) && <p className="mt-2 text-xs text-muted">Changes use the 7-day average, so one heavy or light day doesn&apos;t throw them off.</p>}
+          {bw.points.length > 0 && (
+            <p className="mt-1 text-xs text-muted">
+              Weekly comparison shows after {bw.weeksNeeded} weeks with weigh-ins ({Math.min(bw.weeksLogged, bw.weeksNeeded)} of {bw.weeksNeeded} so far).
+            </p>
+          )}
+        </>
+      )}
       <form action={logBodyweight} className="mt-4 flex flex-wrap items-end gap-2 border-t border-border pt-4">
         <label className="text-xs text-muted">
           Weight ({unit})
@@ -81,7 +120,30 @@ export function ProgressView({
       </form>
       {bw.points.length > 0 && (
         <details className="mt-3 text-sm">
-          <summary className="cursor-pointer text-muted">Show every weigh-in</summary>
+          <summary className="cursor-pointer text-muted">{weeklyMode ? "Show as table" : "Show every weigh-in"}</summary>
+          {weeklyMode && (
+            <table className="mt-2 w-full tabular-nums">
+              <thead>
+                <tr className="text-left text-xs text-muted">
+                  <th className="py-1 font-normal">Week of</th>
+                  <th className="py-1 text-right font-normal">Avg {unit}</th>
+                  <th className="py-1 text-right font-normal">Change</th>
+                  <th className="py-1 text-right font-normal">Weigh-ins</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...bw.weekly].reverse().map((w) => (
+                  <tr key={w.monday} className="border-t border-border">
+                    <td className="py-1">{short(w.monday)}</td>
+                    <td className="py-1 text-right">{n1(toUnit(w.avg))}</td>
+                    <td className="py-1 text-right text-muted">{w.change == null ? "–" : signed(toUnit(w.change))}</td>
+                    <td className="py-1 text-right text-muted">{w.count}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {weeklyMode && <p className="mt-3 text-xs text-muted">Every weigh-in:</p>}
           <table className="mt-2 w-full tabular-nums">
             <thead>
               <tr className="text-left text-xs text-muted">

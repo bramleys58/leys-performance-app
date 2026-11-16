@@ -35,6 +35,44 @@ export function weightChange(points: WeightPoint[], days: number): number | null
   return Math.round((last.avg - ref.avg) * 10) / 10;
 }
 
+export type WeekAverage = { monday: string; avg: number; count: number; change: number | null };
+
+/** How many weeks with weigh-ins it takes before the weekly comparison shows. */
+export const WEEKS_FOR_WEEKLY = 6;
+
+/**
+ * Average bodyweight per calendar week (Monday to Sunday), oldest first, for the
+ * last `weeks` weeks that have weigh-ins. `change` is against the previous week
+ * with weigh-ins, when that week is directly before it.
+ */
+export function weeklyAverages(points: WeightPoint[], weeks = 12): WeekAverage[] {
+  const byWeek = new Map<string, number[]>();
+  for (const p of points) {
+    const m = weekRange(p.day).monday;
+    byWeek.set(m, [...(byWeek.get(m) ?? []), p.kg]);
+  }
+  const all = [...byWeek.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([monday, kgs]) => ({ monday, avg: Math.round((kgs.reduce((x, y) => x + y, 0) / kgs.length) * 100) / 100, count: kgs.length }));
+  return all
+    .map((w, i) => {
+      const prev = all[i - 1];
+      const adjacent = prev && t(w.monday) - t(prev.monday) === 7 * DAY;
+      return { ...w, change: adjacent ? Math.round((w.avg - prev.avg) * 100) / 100 : null };
+    })
+    .slice(-weeks);
+}
+
+/** Average change per week over the last `span` weeks of weekly averages (first to last), or null. */
+export function weeklyRate(avgs: WeekAverage[], span = 4): number | null {
+  const recent = avgs.slice(-(span + 1));
+  if (recent.length < 2) return null;
+  const first = recent[0];
+  const last = recent[recent.length - 1];
+  const weeksApart = (t(last.monday) - t(first.monday)) / (7 * DAY);
+  return weeksApart > 0 ? Math.round(((last.avg - first.avg) / weeksApart) * 100) / 100 : null;
+}
+
 export type LiftSummary = {
   exerciseId: string;
   name: string;

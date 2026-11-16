@@ -138,5 +138,19 @@ console.log("weekly.ts: all checks passed");
   assert.equal(none.blockBest, null);
     assert.equal(weightChange([{ day: "2026-10-17", kg: 84 }, { day: "2026-11-15", kg: 81.5 }], 30), -2.5); // first weigh-in 1 day short of 30
   assert.equal(weightChange([{ day: "2026-11-15", kg: 81.5 }, { day: "2026-11-16", kg: 81 }], 30), null);
+  {
+    const { weeklyAverages, weeklyRate } = await import("../src/lib/progress-math.ts");
+    const pts = [
+      { day: "2026-10-05", kg: 84 }, { day: "2026-10-06", kg: 83 }, // week of 5 Oct: 83.5
+      { day: "2026-10-12", kg: 83 },                                // 12 Oct: 83
+      { day: "2026-10-27", kg: 82 }, { day: "2026-10-29", kg: 81 }, // 26 Oct: 81.5 (19 Oct skipped)
+      { day: "2026-11-02", kg: 81 },                                // 2 Nov: 81
+    ];
+    const wk = weeklyAverages(pts);
+    assert.deepEqual(wk.map((x) => `${x.monday}:${x.avg}:${x.count}:${x.change}`), ["2026-10-05:83.5:2:null", "2026-10-12:83:1:-0.5", "2026-10-26:81.5:2:null", "2026-11-02:81:1:-0.5"]);
+    assert.equal(weeklyRate(wk, 4), -0.62); // 83.5 to 81 over 4 weeks
+    assert.equal(weeklyRate(wk.slice(0, 1)), null);
+    assert.equal(weeklyAverages(pts, 2).length, 2);
+  }
   console.log("progress-math.ts: all checks passed");
 }

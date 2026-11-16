@@ -89,3 +89,69 @@ export function Sparkline({ values, label }: { values: (number | null)[]; label:
     </svg>
   );
 }
+
+/** Weekly average bodyweight: one dot per week, connected when weeks follow each other. */
+export function WeeklyWeightChart({
+  weeks,
+  toUnit,
+  unit,
+  short,
+}: {
+  weeks: { monday: string; avg: number; count: number; change: number | null }[];
+  toUnit: (kg: number) => number;
+  unit: string;
+  short: (d: string) => string;
+}) {
+  if (weeks.length < 2) return null;
+  const t = (d: string) => Date.parse(d + "T12:00:00Z");
+  const x0 = t(weeks[0].monday);
+  const x1 = t(weeks[weeks.length - 1].monday);
+  const vals = weeks.map((w) => toUnit(w.avg));
+  let lo = Math.min(...vals);
+  let hi = Math.max(...vals);
+  const padY = Math.max((hi - lo) * 0.15, 0.5);
+  lo -= padY;
+  hi += padY;
+  const x = (d: string) => PAD.left + ((t(d) - x0) / Math.max(x1 - x0, 1)) * (W - PAD.left - PAD.right);
+  const y = (v: number) => PAD.top + (1 - (v - lo) / (hi - lo)) * (H - PAD.top - PAD.bottom);
+  const ticks = [lo + padY, (lo + hi) / 2, hi - padY];
+  const fmt = (v: number) => (Math.round(v * 10) / 10).toString();
+  let d = "";
+  weeks.forEach((w, i) => {
+    const joined = i > 0 && w.change != null;
+    d += `${joined ? "L" : "M"}${x(w.monday).toFixed(1)},${y(toUnit(w.avg)).toFixed(1)} `;
+  });
+  const every = weeks.length > 8 ? 2 : 1;
+
+  return (
+    <figure className="mt-3">
+      <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label={`Weekly average bodyweight: ${weeks.map((w) => `week of ${short(w.monday)} ${fmt(toUnit(w.avg))} ${unit}`).join(", ")}`}>
+        {ticks.map((v) => (
+          <g key={v}>
+            <line x1={PAD.left} x2={W - PAD.right} y1={y(v)} y2={y(v)} className="stroke-border" strokeWidth="1" />
+            <text x={PAD.left - 10} y={y(v) + 7} textAnchor="end" className="fill-muted" fontSize="22">
+              {fmt(v)}
+            </text>
+          </g>
+        ))}
+        {weeks.map((w, i) =>
+          i % every === (weeks.length - 1) % every ? (
+            <text key={w.monday} x={x(w.monday)} y={H - 4} textAnchor={i === 0 ? "start" : i === weeks.length - 1 ? "end" : "middle"} className="fill-muted" fontSize="20">
+              {short(w.monday)}
+            </text>
+          ) : null,
+        )}
+        <path d={d} fill="none" className="stroke-accent" strokeWidth="3.5" strokeLinejoin="round" strokeLinecap="round" />
+        {weeks.map((w, i) => (
+          <g key={w.monday}>
+            <circle cx={x(w.monday)} cy={y(toUnit(w.avg))} r={i === weeks.length - 1 ? 8 : 6} className="fill-accent stroke-surface" strokeWidth="2" />
+            <circle cx={x(w.monday)} cy={y(toUnit(w.avg))} r="18" fill="transparent">
+              <title>{`Week of ${short(w.monday)}: ${fmt(toUnit(w.avg))} ${unit} average of ${w.count} weigh-in${w.count === 1 ? "" : "s"}${w.change != null ? `, ${w.change > 0 ? "+" : ""}${fmt(toUnit(w.change))} vs the week before` : ""}`}</title>
+            </circle>
+          </g>
+        ))}
+      </svg>
+      <figcaption className="mt-1 text-xs text-muted">Average per week (Monday to Sunday). A gap means a week without weigh-ins.</figcaption>
+    </figure>
+  );
+}

@@ -1,7 +1,7 @@
 import { readiness, type CheckIn } from "@/lib/checkin";
 import { epley, todayISO, weekRange } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/server";
-import { liftSummaries, rollingAverage, weightChange, type SetPoint } from "@/lib/progress-math";
+import { WEEKS_FOR_WEEKLY, liftSummaries, rollingAverage, weeklyAverages, weeklyRate, weightChange, type SetPoint } from "@/lib/progress-math";
 import { best, type Test } from "@/lib/testing";
 
 export type WeekPoint = { monday: string; tonnage: number; sessions: number };
@@ -144,6 +144,11 @@ export async function getProgress(athleteId: string) {
     change7: weightChange(bwPoints, 7),
     change30: weightChange(bwPoints, 30),
     loggedToday: bwPoints.some((p) => p.day === todayISO()),
+    // Weekly comparison once there are enough weeks with weigh-ins.
+    weeksLogged: weeklyAverages(bwPoints, 1000).length,
+    weeksNeeded: WEEKS_FOR_WEEKLY,
+    weekly: weeklyAverages(bwPoints, 12),
+    ratePerWeek: weeklyRate(weeklyAverages(bwPoints, 12), 4),
   };
 
   // ---- main lifts of the current block: strength lifts that carry a max, a % target,

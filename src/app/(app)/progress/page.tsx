@@ -3,10 +3,12 @@ import { ProgressView } from "@/components/progress-view";
 import { requireUser } from "@/lib/auth";
 import { getMyAthlete } from "@/lib/athlete";
 import { getProgress } from "@/lib/progress";
+import { logMyBodyweight } from "../athlete-actions";
 
 export const metadata = { title: "My progress | Leys Performance" };
 
-export default async function MyProgressPage() {
+export default async function MyProgressPage({ searchParams }: PageProps<"/progress">) {
+  const sp = await searchParams;
   await requireUser();
   const athlete = await getMyAthlete();
   if (!athlete) {
@@ -20,7 +22,7 @@ export default async function MyProgressPage() {
   return (
     <div className="space-y-5">
       <h1 className="text-2xl font-bold">My progress</h1>
-      <ProgressView data={data} unit={athlete.unit} historyHref="/history" />
+      <ProgressView data={data} unit={athlete.unit} historyHref="/history" logBodyweight={logMyBodyweight} bwStatus={typeof sp.bw === "string" ? sp.bw : undefined} />
     </div>
   );
 }

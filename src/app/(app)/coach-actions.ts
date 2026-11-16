@@ -752,3 +752,19 @@ export async function deletePackage(athleteId: string, packageId: string) {
   await db.from("client_packages").delete().eq("id", packageId).eq("athlete_id", athleteId);
   go(`/athletes/${athleteId}/client?saved=1`);
 }
+
+/** Logs a bodyweight for an athlete, for example during an in-person session. */
+export async function logAthleteBodyweight(athleteId: string, fd: FormData) {
+  const db = await coachDb();
+  const back = `/athletes/${athleteId}/progress`;
+  const { data: athlete } = await db.from("athletes").select("unit").eq("id", athleteId).maybeSingle();
+  const raw = String(fd.get("weight") ?? "").trim().replace(",", ".");
+  const n = Number(raw);
+  const kg = raw === "" || !Number.isFinite(n) ? null : athlete?.unit === "lbs" ? n * 0.45359237 : n;
+  if (kg == null || kg <= 20 || kg >= 400) go(back + "?bw=invalid#bodyweight");
+  const today = new Date().toISOString().slice(0, 10);
+  const dayRaw = String(fd.get("day") ?? "");
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(dayRaw) && dayRaw <= today ? dayRaw : today;
+  const { error } = await db.from("bodyweights").upsert({ athlete_id: athleteId, day, kg: Math.round((kg as number) * 100) / 100 }, { onConflict: "athlete_id,day" });
+  go(back + `?bw=${error ? "error" : "saved"}#bodyweight`);
+}

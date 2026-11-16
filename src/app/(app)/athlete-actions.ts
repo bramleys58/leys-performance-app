@@ -397,3 +397,37 @@ export async function swapExercise(workoutLogId: string, sessionExerciseId: stri
   revalidatePath(`/workout/${workoutLogId}`);
   return error ? { ok: false, error: "Could not swap the exercise." } : { ok: true };
 }
+
+// ----------------------------------------------------------------- bodyweight
+
+/** Logs today's (or a chosen day's) bodyweight for the athlete who is logged in. */
+export async function logMyBodyweight(fd: FormData) {
+  await requireUser();
+  const athlete = await getMyAthlete();
+  if (!athlete) redirect("/");
+  const supabase = await createClient();
+  const kg = bodyweightKg(fd, athlete.unit);
+  const day = bodyweightDay(fd);
+  if (kg == null) redirect("/progress?bw=invalid#bodyweight");
+  const { error } = await supabase.from("bodyweights").upsert({ athlete_id: athlete.id, day, kg }, { onConflict: "athlete_id,day" });
+  revalidatePath("/progress");
+  redirect(`/progress?bw=${error ? "error" : "saved"}#bodyweight`);
+}
+
+/** Reads the weight in the athlete's unit and returns kg, or null when it is not a plausible bodyweight. */
+function bodyweightKg(fd: FormData, unit: "kg" | "lbs"): number | null {
+  const raw = String(fd.get("weight") ?? "").trim().replace(",", ".");
+  const n = Number(raw);
+  if (raw === "" || !Number.isFinite(n)) return null;
+  const kg = unit === "lbs" ? n * KG_PER_LB_CHECKIN : n;
+  return kg > 20 && kg < 400 ? Math.round(kg * 100) / 100 : null;
+}
+
+/** Today, or a chosen day that is not in the future and not older than a year. */
+function bodyweightDay(fd: FormData): string {
+  const today = todayISO();
+  const raw = String(fd.get("day") ?? "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw) || raw > today) return today;
+  const yearAgo = new Date(Date.parse(today + "T12:00:00Z") - 365 * 86400000).toISOString().slice(0, 10);
+  return raw < yearAgo ? today : raw;
+}

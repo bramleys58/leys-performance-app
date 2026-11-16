@@ -1,6 +1,7 @@
 import { readiness, type CheckIn } from "@/lib/checkin";
 import { epley, todayISO, weekRange } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/server";
+import { liftSummaries, rollingAverage, weightChange, type SetPoint } from "@/lib/progress-math";
 import { best, type Test } from "@/lib/testing";
 
 export type WeekPoint = { monday: string; tonnage: number; sessions: number };
@@ -18,7 +19,8 @@ export async function getProgress(athleteId: string) {
   const from = start.toISOString().slice(0, 10);
 
   const twoWeeksAgo = new Date(new Date(todayISO() + "T12:00:00Z").getTime() - 13 * 86400000).toISOString().slice(0, 10);
-  const [{ data: logs }, { data: sets }, { data: maxes }, { data: results }, { data: tests }, { data: checkRows }] = await Promise.all([
+  const yearAgo = new Date(new Date(todayISO() + "T12:00:00Z").getTime() - 365 * 86400000).toISOString().slice(0, 10);
+  const [{ data: logs }, { data: sets }, { data: maxes }, { data: results }, { data: tests }, { data: checkRows }, { data: bwRows }, { data: bwCheckRows }, { data: programRows }] = await Promise.all([
     supabase.from("workout_logs").select("id, performed_on, finished_at, duration_minutes").eq("athlete_id", athleteId).gte("performed_on", from),
     supabase
       .from("set_logs")
@@ -32,6 +34,13 @@ export async function getProgress(athleteId: string) {
     supabase.from("test_results").select("test_id, value, test_events(held_on)").eq("athlete_id", athleteId),
     supabase.from("tests").select("*"),
     supabase.from("check_ins").select("*").eq("athlete_id", athleteId).gte("day", twoWeeksAgo).order("day", { ascending: false }),
+    supabase.from("bodyweights").select("day, kg").eq("athlete_id", athleteId).gte("day", yearAgo),
+    supabase.from("check_ins").select("day, bodyweight").eq("athlete_id", athleteId).gte("day", yearAgo).not("bodyweight", "is", null),
+    supabase
+      .from("programs")
+      .select("id, name, start_date, created_at, sessions(session_exercises(exercise_id, section, position, target_type, max_exercise_id, exercises!session_exercises_exercise_id_fkey(name, tracking_type, counts_for_maxes)))")
+      .eq("athlete_id", athleteId)
+      .eq("status", "active"),
   ]);
 
   // ---- weekly volume (kg lifted) and sessions, last 8 weeks
@@ -124,5 +133,46 @@ export async function getProgress(athleteId: string) {
   const times = ((logs ?? []) as { duration_minutes: number | null }[]).map((l) => l.duration_minutes).filter((v): v is number => v != null && v > 0);
   const avgMinutes = times.length ? Math.round(times.reduce((a, b) => a + b, 0) / times.length) : null;
 
-  return { weeks, prs, maxes: maxList, tests: testSummaries, wellness, avgMinutes };
+  // ---- bodyweight: own log, plus what was entered in daily check-ins (the log wins on the same day)
+  const byDay = new Map<string, number>();
+  for (const c of (bwCheckRows ?? []) as { day: string; bodyweight: number }[]) byDay.set(c.day, Number(c.bodyweight));
+  for (const b of (bwRows ?? []) as { day: string; kg: number }[]) byDay.set(b.day, Number(b.kg));
+  const bwPoints = [...byDay.entries()].map(([day, kg]) => ({ day, kg })).sort((a, b) => a.day.localeCompare(b.day));
+  const bodyweight = {
+    points: rollingAverage(bwPoints),
+    latest: bwPoints[bwPoints.length - 1] ?? null,
+    change7: weightChange(bwPoints, 7),
+    change30: weightChange(bwPoints, 30),
+    loggedToday: bwPoints.some((p) => p.day === todayISO()),
+  };
+
+  // ---- main lifts of the current block: strength lifts that carry a max, a % target,
+  // or open a session. Compared with where they were before the block started.
+  type SE = { exercise_id: string | null; section: string; position: number; target_type: string; max_exercise_id: string | null; exercises: { name: string; tracking_type: string; counts_for_maxes: boolean } | null };
+  type Prog = { id: string; name: string; start_date: string | null; created_at: string; sessions: { session_exercises: SE[] }[] };
+  const programs = (programRows ?? []) as unknown as Prog[];
+  const liftCount = new Map<string, number>();
+  const liftNames = new Map<string, string>();
+  for (const prog of programs) {
+    for (const session of prog.sessions ?? []) {
+      const strength = (session.session_exercises ?? []).filter((r) => r.exercise_id && r.section === "workout" && (r.exercises?.tracking_type ?? "load") === "load");
+      const opener = strength.reduce<SE | null>((a, b) => (a == null || b.position < a.position ? b : a), null);
+      for (const r of strength) {
+        if (r === opener || r.exercises?.counts_for_maxes || r.target_type === "percent") {
+          liftCount.set(r.exercise_id as string, (liftCount.get(r.exercise_id as string) ?? 0) + 1);
+          liftNames.set(r.exercise_id as string, r.exercises?.name ?? "Lift");
+        }
+      }
+    }
+  }
+  const liftIds = [...liftCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([id]) => id);
+  const blockStart = programs.length ? programs.map((p) => p.start_date ?? p.created_at.slice(0, 10)).sort()[0] : null;
+  const setPoints: SetPoint[] = allSets
+    .filter((x) => x.exercise_id && liftIds.includes(x.exercise_id))
+    .map((x) => ({ exerciseId: x.exercise_id as string, name: x.exercises?.name ?? x.exercise_name, weight: Number(x.weight), reps: x.reps, on: x.workout_logs.performed_on }));
+  const block = blockStart
+    ? { name: programs.length === 1 ? programs[0].name : `${programs.length} programs`, start: blockStart, lifts: liftSummaries(liftIds, liftNames, setPoints, blockStart, todayISO()) }
+    : null;
+
+  return { weeks, prs, maxes: maxList, tests: testSummaries, wellness, avgMinutes, bodyweight, block };
 }

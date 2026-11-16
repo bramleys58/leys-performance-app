@@ -1,13 +1,28 @@
 import Link from "next/link";
-import { Card } from "@/components/ui";
+import { BodyweightChart, Sparkline } from "@/components/progress-charts";
+import { ActionButton, Card, Notice, inputClass } from "@/components/ui";
+import { todayISO } from "@/lib/plan";
 import type { getProgress } from "@/lib/progress";
 import { change, fmt, isNeutral } from "@/lib/testing";
 
 type Data = Awaited<ReturnType<typeof getProgress>>;
 const KG_PER_LB = 0.45359237;
 
-/** Progress for one athlete: weekly volume, records, maxes and test results. */
-export function ProgressView({ data, unit, historyHref }: { data: Data; unit: "kg" | "lbs"; historyHref: string }) {
+/** Progress for one athlete: block lifts, bodyweight, weekly volume, records, maxes and test results. */
+export function ProgressView({
+  data,
+  unit,
+  historyHref,
+  logBodyweight,
+  bwStatus,
+}: {
+  data: Data;
+  unit: "kg" | "lbs";
+  historyHref: string;
+  /** Server action that saves a weigh-in. */
+  logBodyweight: (fd: FormData) => Promise<void>;
+  bwStatus?: string;
+}) {
   const toUnit = (kg: number) => (unit === "lbs" ? kg / KG_PER_LB : kg);
   const n0 = (v: number) => new Intl.NumberFormat("en-GB", { maximumFractionDigits: 0 }).format(v);
   const n1 = (v: number) => new Intl.NumberFormat("en-GB", { maximumFractionDigits: 1 }).format(v);
@@ -17,17 +32,156 @@ export function ProgressView({ data, unit, historyHref }: { data: Data; unit: "k
   const thisWeek = data.weeks[data.weeks.length - 1];
   const lastWeek = data.weeks[data.weeks.length - 2];
   const empty = data.weeks.every((w) => w.tonnage === 0 && w.sessions === 0) && data.prs.length === 0 && data.maxes.length === 0 && data.tests.length === 0 && data.wellness.days.length === 0;
+  const signed = (v: number, digits = 1) => `${v > 0 ? "+" : v < 0 ? "−" : "±"}${new Intl.NumberFormat("en-GB", { maximumFractionDigits: digits }).format(Math.abs(v))}`;
+  const bw = data.bodyweight;
+  const lifts = data.block?.lifts ?? [];
+  const blockWeeks = lifts[0]?.weekly.length ?? 0;
 
-  if (empty) {
+  const bodyweightCard = (
+    <Card>
+      <div id="bodyweight" className="flex scroll-mt-20 items-baseline justify-between gap-3">
+        <h2 className="font-semibold">Bodyweight</h2>
+        {bw.points.length > 0 && <p className="text-sm text-muted">{bw.points.length} weigh-ins this year</p>}
+      </div>
+      {bwStatus === "saved" && <div className="mt-3"><Notice kind="ok">Weigh-in saved.</Notice></div>}
+      {bwStatus === "invalid" && <div className="mt-3"><Notice kind="error">That weight doesn&apos;t look right. Fill in your weight in {unit}.</Notice></div>}
+      {bwStatus === "error" && <div className="mt-3"><Notice kind="error">Could not save the weigh-in. Try again.</Notice></div>}
+      {bw.latest ? (
+        <div className="mt-3 grid grid-cols-3 gap-3">
+          <div>
+            <p className="text-2xl font-bold tabular-nums">{n1(toUnit(bw.latest.kg))}</p>
+            <p className="text-xs text-muted">
+              {unit} · {bw.latest.day === todayISO() ? "today" : short(bw.latest.day)}
+            </p>
+          </div>
+          <div>
+            <p className="text-2xl font-bold tabular-nums">{bw.change7 == null ? "–" : signed(toUnit(bw.change7))}</p>
+            <p className="text-xs text-muted">{unit} last 7 days</p>
+          </div>
+          <div>
+            <p className="text-2xl font-bold tabular-nums">{bw.change30 == null ? "–" : signed(toUnit(bw.change30))}</p>
+            <p className="text-xs text-muted">{unit} last 30 days</p>
+          </div>
+        </div>
+      ) : (
+        <p className="mt-2 text-sm text-muted">No weigh-ins yet. Weigh in at the same moment each time, for example in the morning before breakfast.</p>
+      )}
+      <BodyweightChart points={bw.points.slice(-120)} toUnit={toUnit} unit={unit} short={short} />
+      {(bw.change7 != null || bw.change30 != null) && <p className="mt-2 text-xs text-muted">Changes use the 7-day average, so one heavy or light day doesn&apos;t throw them off.</p>}
+      <form action={logBodyweight} className="mt-4 flex flex-wrap items-end gap-2 border-t border-border pt-4">
+        <label className="text-xs text-muted">
+          Weight ({unit})
+          <input name="weight" inputMode="decimal" required placeholder={bw.latest ? n1(toUnit(bw.latest.kg)) : unit === "kg" ? "e.g. 82.5" : "e.g. 180"} className={inputClass + " w-32"} />
+        </label>
+        <label className="text-xs text-muted">
+          Day
+          <input name="day" type="date" defaultValue={todayISO()} max={todayISO()} className={inputClass} />
+        </label>
+        <ActionButton className="rounded-xl bg-accent px-5 py-3 font-semibold text-accent-text">{bw.loggedToday ? "Update" : "Log weight"}</ActionButton>
+      </form>
+      {bw.points.length > 0 && (
+        <details className="mt-3 text-sm">
+          <summary className="cursor-pointer text-muted">Show every weigh-in</summary>
+          <table className="mt-2 w-full tabular-nums">
+            <thead>
+              <tr className="text-left text-xs text-muted">
+                <th className="py-1 font-normal">Day</th>
+                <th className="py-1 text-right font-normal">{unit}</th>
+                <th className="py-1 text-right font-normal">7-day avg</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...bw.points].reverse().slice(0, 60).map((p) => (
+                <tr key={p.day} className="border-t border-border">
+                  <td className="py-1">{short(p.day)}</td>
+                  <td className="py-1 text-right">{n1(toUnit(p.kg))}</td>
+                  <td className="py-1 text-right text-muted">{n1(toUnit(p.avg))}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
+      )}
+    </Card>
+  );
+
+  if (empty && lifts.length === 0) {
     return (
-      <Card>
-        <p className="text-sm text-muted">Nothing to show yet. Progress appears here after the first logged workouts and tests.</p>
-      </Card>
+      <div className="space-y-5">
+        {bodyweightCard}
+        <Card>
+          <p className="text-sm text-muted">Lifts, records and tests appear here after the first logged workouts.</p>
+        </Card>
+      </div>
     );
   }
 
   return (
     <div className="space-y-5">
+      {data.block && lifts.length > 0 && (
+        <Card>
+          <div className="flex items-baseline justify-between gap-3">
+            <h2 className="font-semibold">Main lifts this block</h2>
+            <p className="text-sm text-muted">since {short(data.block.start)}</p>
+          </div>
+          <p className="mt-1 text-sm text-muted">Best estimated max per lift, compared with before the block. The line shows each week of the block.</p>
+          <ul className="mt-3 divide-y divide-border">
+            {lifts.map((l) => {
+              const diff = l.blockBest != null && l.before != null ? l.blockBest - l.before : null;
+              const pct = diff != null && l.before ? (diff / l.before) * 100 : null;
+              return (
+                <li key={l.exerciseId} className="py-3">
+                  <p className="font-medium">
+                    {l.name}
+                    {l.prDays.length > 0 && (
+                      <span className="ml-2 whitespace-nowrap rounded-full border border-ok px-2 py-0.5 align-middle text-[11px] font-normal text-ok">
+                        {l.prDays.length} PR{l.prDays.length === 1 ? "" : "s"}
+                      </span>
+                    )}
+                  </p>
+                  <div className="mt-1 flex items-center gap-3">
+                    <p className="min-w-0 flex-1 text-sm text-muted">
+                      {l.blockBestSet
+                        ? `best ${n1(toUnit(l.blockBestSet.weight))} ${unit} × ${l.blockBestSet.reps} · ${short(l.blockBestSet.on)}`
+                        : "not logged yet this block"}
+                    </p>
+                    <Sparkline
+                      values={l.weekly.map((w) => (w.e1rm == null ? null : toUnit(w.e1rm)))}
+                      label={`${l.name}, best estimated max per week: ${l.weekly.map((w) => `${short(w.monday)} ${w.e1rm == null ? "no sets" : n1(toUnit(w.e1rm)) + " " + unit}`).join(", ")}`}
+                    />
+                    <div className="w-24 shrink-0 text-right">
+                      <p className="font-bold tabular-nums">
+                        {l.blockBest == null ? "–" : n1(toUnit(l.blockBest))}
+                        {l.blockBest != null && <span className="ml-1 text-xs font-normal text-muted">{unit}</span>}
+                      </p>
+                      <p className={`text-xs tabular-nums ${diff == null ? "text-muted" : diff > 0 ? "text-ok" : diff < 0 ? "text-accent" : "text-muted"}`}>
+                        {diff == null ? (l.blockBest == null ? "" : "first block") : `${signed(toUnit(diff))} (${signed(pct ?? 0, 0)}%)`}
+                      </p>
+                    </div>
+                  </div>
+                  {l.repBests.length > 0 && (
+                    <p className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted">
+                      {l.repBests.map((r) => (
+                        <span key={r.reps} className={r.inBlock ? "text-text" : ""} title={`Heaviest ${r.reps === 10 ? "10+" : r.reps}-rep set: ${short(r.on)}${r.inBlock ? ", this block" : ""}`}>
+                          {r.reps === 10 ? "10+" : r.reps} RM {n1(toUnit(r.weight))}
+                          {r.inBlock ? " ★" : ""}
+                        </span>
+                      ))}
+                    </p>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          <p className="mt-2 text-xs text-muted">
+            Estimated max from your best set (Epley). RM is the heaviest weight lifted for that many reps, all time; ★ means it was set this block. A PR is a higher estimated max or the heaviest weight ever.
+            {blockWeeks > 0 ? ` Line: ${blockWeeks} week${blockWeeks === 1 ? "" : "s"}.` : ""}
+          </p>
+        </Card>
+      )}
+
+      {bodyweightCard}
+
       <Card>
         <div className="flex items-baseline justify-between gap-3">
           <h2 className="font-semibold">Weekly volume</h2>

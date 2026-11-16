@@ -103,3 +103,40 @@ console.log("weekly.ts: all checks passed");
   assert.equal(incomeByMonth([], "2026-01-10", 2)[0].month, "2025-12");
   console.log("business.ts: all checks passed");
 }
+
+{
+  const { liftSummaries, rollingAverage, weightChange } = await import("../src/lib/progress-math.ts");
+  const w = [
+    { day: "2026-10-01", kg: 80 }, { day: "2026-10-02", kg: 81 }, { day: "2026-10-03", kg: 79 },
+    { day: "2026-10-20", kg: 82 }, { day: "2026-11-01", kg: 83 }, { day: "2026-11-02", kg: 83.4 },
+  ];
+  const r = rollingAverage(w);
+  assert.equal(r[2].avg, 80);
+  assert.equal(r[5].avg, 83.2);
+  assert.equal(weightChange(w, 30), 3.2);
+  assert.equal(weightChange(w, 7), 1.2); // closest to 26 Oct is 20 Oct, 6 days off: allowed
+  assert.equal(weightChange([{ day: "2026-09-01", kg: 70 }, { day: "2026-11-01", kg: 80 }], 7), null); // 2 months off: no comparison
+  assert.equal(weightChange([{ day: "2026-11-01", kg: 80 }], 7), null);
+
+  const sets = [
+    { exerciseId: "sq", name: "Squat", weight: 100, reps: 5, on: "2026-09-10" },
+    { exerciseId: "sq", name: "Squat", weight: 100, reps: 3, on: "2026-11-03" },
+    { exerciseId: "sq", name: "Squat", weight: 110, reps: 5, on: "2026-11-05" },
+    { exerciseId: "sq", name: "Squat", weight: 120, reps: 1, on: "2026-11-12" },
+    { exerciseId: "bp", name: "Bench", weight: 60, reps: 8, on: "2026-11-04" },
+    { exerciseId: "bp", name: "Bench", weight: 65, reps: 8, on: "2026-11-11" },
+  ];
+  const [sq, bp, none] = liftSummaries(["sq", "bp", "dl"], new Map([["dl", "Deadlift"]]), sets, "2026-11-02", "2026-11-16");
+  assert.equal(sq.before, 116.7);
+  assert.equal(sq.blockBest, 128.3);
+  assert.deepEqual(sq.prDays, ["2026-11-05", "2026-11-12"]);
+  assert.deepEqual(sq.weekly.map((x) => x.e1rm), [128.3, 120, null]); // a single counts as its own weight
+  assert.deepEqual(sq.repBests.map((x) => `${x.reps}:${x.weight}:${x.inBlock}`), ["1:120:true", "3:100:true", "5:110:true"]);
+  assert.equal(bp.before, null);
+  assert.deepEqual(bp.prDays, ["2026-11-11"]);
+  assert.equal(none.name, "Deadlift");
+  assert.equal(none.blockBest, null);
+    assert.equal(weightChange([{ day: "2026-10-17", kg: 84 }, { day: "2026-11-15", kg: 81.5 }], 30), -2.5); // first weigh-in 1 day short of 30
+  assert.equal(weightChange([{ day: "2026-11-15", kg: 81.5 }, { day: "2026-11-16", kg: 81 }], 30), null);
+  console.log("progress-math.ts: all checks passed");
+}

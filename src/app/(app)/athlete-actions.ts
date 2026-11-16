@@ -431,3 +431,30 @@ function bodyweightDay(fd: FormData): string {
   const yearAgo = new Date(Date.parse(today + "T12:00:00Z") - 365 * 86400000).toISOString().slice(0, 10);
   return raw < yearAgo ? today : raw;
 }
+
+// ------------------------------------------------------------------ welcome
+
+/** First login: privacy agreement, unit and an optional first weigh-in. */
+export async function finishWelcome(fd: FormData) {
+  await requireUser();
+  const athlete = await getMyAthlete();
+  if (!athlete) redirect("/");
+  if (fd.get("agree") !== "on") redirect("/welcome?error=1");
+  const supabase = await createClient();
+  const unit = fd.get("unit") === "lbs" ? "lbs" : "kg";
+  await supabase.rpc("accept_privacy");
+  if (unit !== athlete.unit) await supabase.rpc("set_my_unit", { p_unit: unit });
+  const kg = bodyweightKg(fd, unit);
+  if (kg != null) await supabase.from("bodyweights").upsert({ athlete_id: athlete.id, day: todayISO(), kg }, { onConflict: "athlete_id,day" });
+  revalidatePath("/", "layout");
+  redirect("/?welcome=1");
+}
+
+/** Athletes switch between kg and lbs themselves. */
+export async function setMyUnit(unit: "kg" | "lbs") {
+  await requireUser();
+  const supabase = await createClient();
+  await supabase.rpc("set_my_unit", { p_unit: unit === "lbs" ? "lbs" : "kg" });
+  revalidatePath("/", "layout");
+  redirect("/account?saved=unit");
+}

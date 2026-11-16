@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Card, SecondaryButton } from "@/components/ui";
 import { startFreeWorkout } from "@/app/(app)/athlete-actions";
 import { getMyAthlete } from "@/lib/athlete";
@@ -18,7 +19,7 @@ export function today() {
 }
 
 /** The athlete's Today screen. Also used for a coach who has their own athlete profile. */
-export async function AthleteHome({ firstName }: { firstName: string }) {
+export async function AthleteHome({ firstName, welcome = false, isCoach = false }: { firstName: string; welcome?: boolean; isCoach?: boolean }) {
   const supabase = await createClient();
   const athlete = await getMyAthlete();
   const name = firstName || athlete?.full_name?.split(" ")[0] || "";
@@ -41,6 +42,9 @@ export async function AthleteHome({ firstName }: { firstName: string }) {
       </div>
     );
   }
+
+  // First login: privacy notice and basics before anything else.
+  if (!isCoach && !athlete.privacy_accepted_at) redirect("/welcome");
 
   const day = todayISO();
   const weekday = isoWeekday();
@@ -161,6 +165,20 @@ export async function AthleteHome({ firstName }: { firstName: string }) {
   return (
     <div className="space-y-6">
       {heading}
+      {welcome && (
+        <Card>
+          <h2 className="font-semibold">You&apos;re in. One last tip:</h2>
+          <p className="mt-1 text-sm text-muted">Put the app on your home screen so it opens like a normal app.</p>
+          <ul className="mt-2 space-y-1 text-sm">
+            <li>
+              <b>iPhone:</b> in Safari tap Share, then &quot;Add to Home Screen&quot;.
+            </li>
+            <li>
+              <b>Android:</b> in Chrome tap the ⋮ menu, then &quot;Install app&quot; or &quot;Add to Home screen&quot;.
+            </li>
+          </ul>
+        </Card>
+      )}
       {replies.map((r) => (
         <Link key={r.workout_log_id} href={`/workout/${r.workout_log_id}`} className="block rounded-2xl border border-accent bg-surface px-5 py-4">
           <span className="block text-sm text-accent">Your coach replied · {r.workout_logs?.session_name ?? "Workout"}</span>

@@ -7,10 +7,11 @@ import { type ClientPackage, packageState } from "@/lib/business";
 import { getWorkoutsToReview } from "@/lib/review";
 import { createClient } from "@/lib/supabase/server";
 
-export default async function HomePage() {
+export default async function HomePage({ searchParams }: PageProps<"/">) {
+  const sp = await searchParams;
   const user = await requireUser();
   const firstName = user.fullName.split(" ")[0];
-  return user.role === "coach" ? <CoachHome firstName={firstName} userId={user.id} /> : <AthleteHome firstName={firstName} />;
+  return user.role === "coach" ? <CoachHome firstName={firstName} userId={user.id} /> : <AthleteHome firstName={firstName} welcome={sp.welcome === "1"} />;
 }
 
 async function CoachHome({ firstName, userId }: { firstName: string; userId: string }) {

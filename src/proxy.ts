@@ -2,7 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { isSupabaseConfigured, supabaseKey, supabaseUrl } from "@/lib/supabase/env";
 
-const PUBLIC_PATHS = ["/login", "/auth", "/setup"];
+const PUBLIC_PATHS = ["/login", "/auth", "/setup", "/privacy"];
 
 // Runs before every page: keeps the login session fresh and sends visitors
 // without a session to the login page.

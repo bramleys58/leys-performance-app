@@ -220,7 +220,9 @@ export default async function AthletePage({ params, searchParams }: PageProps<"/
           </label>
           <p className="text-xs text-muted">
             {athlete.user_id
-              ? "This athlete has a login."
+              ? athlete.privacy_accepted_at
+                ? `This athlete has a login and agreed to the privacy notice on ${new Date(athlete.privacy_accepted_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}.`
+                : "This athlete has a login but has not agreed to the privacy notice yet. They are asked on their next visit."
               : athlete.email
                 ? "No login yet. Send an invite with the button below."
                 : "No login. Add an email address first if they should log in themselves."}

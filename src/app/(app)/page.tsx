@@ -4,15 +4,16 @@ import { isoWeekday, todayISO, weekFilter } from "@/lib/plan";
 import { Card } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { type ClientPackage, packageState } from "@/lib/business";
+import { getWorkoutsToReview } from "@/lib/review";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function HomePage() {
   const user = await requireUser();
   const firstName = user.fullName.split(" ")[0];
-  return user.role === "coach" ? <CoachHome firstName={firstName} /> : <AthleteHome firstName={firstName} />;
+  return user.role === "coach" ? <CoachHome firstName={firstName} userId={user.id} /> : <AthleteHome firstName={firstName} />;
 }
 
-async function CoachHome({ firstName }: { firstName: string }) {
+async function CoachHome({ firstName, userId }: { firstName: string; userId: string }) {
   const supabase = await createClient();
   const day = todayISO();
   const [athletes, exercises, review, programs, pending, unread, todays, todayLogs, checked, pkgs] = await Promise.all([
@@ -32,6 +33,7 @@ async function CoachHome({ firstName }: { firstName: string }) {
   ]);
   // Packages that need a look: unpaid, almost used up, ending soon.
   const openPkgs = (pkgs.data ?? []) as ClientPackage[];
+  const toReview = await getWorkoutsToReview(userId);
   let business = 0;
   if (openPkgs.length > 0) {
     const ids = [...new Set(openPkgs.map((p) => p.athlete_id))];
@@ -85,6 +87,17 @@ async function CoachHome({ firstName }: { firstName: string }) {
           );
         })}
       </div>
+      {toReview.length > 0 && (
+        <Link href="/review" className="flex items-center justify-between rounded-2xl border border-accent bg-surface px-5 py-4">
+          <span className="min-w-0">
+            <span className="block font-semibold">
+              {toReview.length} workout{toReview.length === 1 ? "" : "s"} to review
+            </span>
+            <span className="block truncate text-sm text-muted">{[...new Set(toReview.map((w) => w.athleteName.split(" ")[0]))].slice(0, 4).join(", ")}</span>
+          </span>
+          <span className="text-muted">→</span>
+        </Link>
+      )}
       {business > 0 && (
         <Link href="/business" className="flex items-center justify-between rounded-2xl border border-accent bg-surface px-5 py-4">
           <span>

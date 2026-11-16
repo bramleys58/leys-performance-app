@@ -768,3 +768,28 @@ export async function logAthleteBodyweight(athleteId: string, fd: FormData) {
   const { error } = await db.from("bodyweights").upsert({ athlete_id: athleteId, day, kg: Math.round((kg as number) * 100) / 100 }, { onConflict: "athlete_id,day" });
   go(back + `?bw=${error ? "error" : "saved"}#bodyweight`);
 }
+
+// ------------------------------------------------------------ workout reviews
+
+/** Marks a finished workout as reviewed, with an optional reply the athlete sees. */
+export async function reviewWorkout(workoutLogId: string, fd: FormData) {
+  const db = await coachDb();
+  const { data: log } = await db.from("workout_logs").select("athlete_id").eq("id", workoutLogId).maybeSingle();
+  if (!log) go("/review");
+  const reply = (text(fd, "reply") ?? "").slice(0, 2000) || null;
+  const { data: existing } = await db.from("workout_reviews").select("reply").eq("workout_log_id", workoutLogId).maybeSingle();
+  await db.from("workout_reviews").upsert(
+    {
+      workout_log_id: workoutLogId,
+      athlete_id: log!.athlete_id,
+      reply,
+      reviewed_at: new Date().toISOString(),
+      // A changed reply counts as new for the athlete.
+      ...(existing?.reply !== reply ? { reply_seen_at: null } : {}),
+    },
+    { onConflict: "workout_log_id" },
+  );
+  revalidatePath("/");
+  const next = String(fd.get("next") ?? "");
+  go(next.startsWith("/workout/") || next === "/review" ? next : `/workout/${workoutLogId}?reviewed=1`);
+}

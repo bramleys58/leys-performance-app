@@ -47,7 +47,7 @@ export async function AthleteHome({ firstName }: { firstName: string }) {
   const { monday, sunday } = weekRange(day);
 
   const weekly = weeklyTarget(day, weekday);
-  const [{ data: sessionData }, { data: logData }, { data: checkData }, { data: weeklyData }] = await Promise.all([
+  const [{ data: sessionData }, { data: logData }, { data: checkData }, { data: weeklyData }, { data: replyData }] = await Promise.all([
     supabase
       .from("sessions")
       .select("id, name, kind, weekday, scheduled_date, is_optional, estimated_minutes, position, week, program_id, programs!inner(status, athlete_id, start_date, created_at), session_exercises(count)")
@@ -56,7 +56,17 @@ export async function AthleteHome({ firstName }: { firstName: string }) {
     supabase.from("workout_logs").select("id, session_id, session_name, performed_on, finished_at").eq("athlete_id", athlete.id).gte("performed_on", monday).lte("performed_on", sunday),
     supabase.from("check_ins").select("*").eq("athlete_id", athlete.id).eq("day", day).maybeSingle(),
   supabase.from("weekly_check_ins").select("id").eq("athlete_id", athlete.id).eq("week_start", weekly.weekStart).maybeSingle(),
+    supabase
+      .from("workout_reviews")
+      .select("workout_log_id, reply, workout_logs(session_name, performed_on)")
+      .eq("athlete_id", athlete.id)
+      .not("reply", "is", null)
+      .is("reply_seen_at", null)
+      .order("reviewed_at", { ascending: false })
+      .limit(3),
   ]);
+  type Reply = { workout_log_id: string; reply: string; workout_logs: { session_name: string | null; performed_on: string } | null };
+  const replies = (replyData ?? []) as unknown as Reply[];
 
   type S = { id: string; name: string; kind: string; weekday: number | null; scheduled_date: string | null; is_optional: boolean; estimated_minutes: number | null; position: number; week: number | null; program_id: string; programs: { start_date: string | null; created_at: string }; session_exercises: { count: number }[] };
   const everySession = (sessionData ?? []) as unknown as S[];
@@ -151,6 +161,12 @@ export async function AthleteHome({ firstName }: { firstName: string }) {
   return (
     <div className="space-y-6">
       {heading}
+      {replies.map((r) => (
+        <Link key={r.workout_log_id} href={`/workout/${r.workout_log_id}`} className="block rounded-2xl border border-accent bg-surface px-5 py-4">
+          <span className="block text-sm text-accent">Your coach replied · {r.workout_logs?.session_name ?? "Workout"}</span>
+          <span className="mt-1 line-clamp-2 block">{r.reply}</span>
+        </Link>
+      ))}
       {!athlete.tracking_only && (
         <>
           {weekly.isSunday && !weeklyDone && <WeeklyPrompt weekLabel={weekLabel(weekly.weekStart)} />}

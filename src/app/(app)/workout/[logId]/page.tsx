@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Card, SecondaryButton } from "@/components/ui";
+import { ActionButton, Card, SecondaryButton } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { epley, roundToStep, sortRows, type PlanRow, type TrackingType } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/server";
 import { extraRow, type LoggedSet, type LoggerRow } from "@/lib/logger-types";
 import { reopenWorkout } from "../../athlete-actions";
+import { reviewWorkout } from "../../coach-actions";
 import { Logger } from "./logger";
 
 const KG_PER_LB = 0.45359237;
@@ -176,6 +177,28 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
   // ----------------------------------------------------------- summary view
   if (log.finished_at) {
     const done = sets.filter((s) => !s.skipped);
+
+    // Coach feedback. Opening the workout counts as reading it.
+    const { data: review } = await supabase.from("workout_reviews").select("reply, reviewed_at, reply_seen_at").eq("workout_log_id", logId).maybeSingle();
+    if (!forClient && user.role !== "coach" && review?.reply && !review.reply_seen_at) await supabase.rpc("mark_reply_seen", { p_workout_log_id: logId });
+
+    // Sets per exercise, in the order they were planned or added.
+    const unitOf = athlete.unit;
+    const show = (kg: number) => new Intl.NumberFormat("en-GB", { maximumFractionDigits: 1 }).format(unitOf === "lbs" ? kg / KG_PER_LB : kg);
+    const setText = (x: LoggedSet) => {
+      if (x.skipped) return "skipped";
+      const parts: string[] = [];
+      if (x.weight != null && x.reps != null) parts.push(`${show(x.weight)}×${x.reps}`);
+      else if (x.reps != null) parts.push(`${x.reps} reps`);
+      else if (x.weight != null) parts.push(`${show(x.weight)} ${unitOf}`);
+      if (x.seconds != null) parts.push(`${x.seconds}s`);
+      if (x.distance != null) parts.push(`${x.distance} m`);
+      if (x.rpe != null) parts.push(`@${x.rpe}`);
+      return parts.join(" ") || "done";
+    };
+    const perExercise = loggerRows
+      .map((r) => ({ name: r.name, sets: logged.filter((x) => x.rowId === r.id).sort((a, b) => a.setNumber - b.setNumber) }))
+      .filter((e) => e.sets.length > 0);
     const factor = athlete.unit === "lbs" ? 1 / KG_PER_LB : 1;
     const tonnage = done.reduce((t, s) => t + (s.weight && s.reps ? Number(s.weight) * s.reps : 0), 0) * factor;
     const timed = log.started_at ? Math.max(1, Math.round((new Date(log.finished_at).getTime() - new Date(log.started_at).getTime()) / 60000)) : null;
@@ -250,8 +273,48 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
         )}
         {log.comment && (
           <Card>
-            <p className="text-sm text-muted">Comment</p>
+            <p className="text-sm text-muted">{forClient ? `${athlete.full_name.split(" ")[0]}'s comment` : "Your comment"}</p>
             <p className="mt-1 whitespace-pre-line">{log.comment}</p>
+          </Card>
+        )}
+        {!forClient && review?.reply && (
+          <Card>
+            <p className="text-sm text-accent">Feedback from your coach</p>
+            <p className="mt-1 whitespace-pre-line">{review.reply}</p>
+          </Card>
+        )}
+        {perExercise.length > 0 && (
+          <Card>
+            <h2 className="font-semibold">Sets</h2>
+            <ul className="mt-2 divide-y divide-border">
+              {perExercise.map((e) => (
+                <li key={e.name} className="py-2">
+                  <p className="text-sm font-medium">{e.name}</p>
+                  <p className="text-sm tabular-nums text-muted">{e.sets.map(setText).join(" · ")}</p>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs text-muted">Weight × reps in {unitOf}, @ is RPE.</p>
+          </Card>
+        )}
+        {forClient && (
+          <Card>
+            <h2 className="font-semibold">{review ? "Your feedback" : "Feedback"}</h2>
+            {review && !review.reply && <p className="mt-1 text-sm text-muted">Marked as seen.</p>}
+            {review?.reply && <p className="mt-1 text-xs text-muted">{review.reply_seen_at ? "Read" : "Not read yet"}</p>}
+            <form action={reviewWorkout.bind(null, logId)} className="mt-3 space-y-3">
+              <input type="hidden" name="next" value="/review" />
+              <textarea
+                name="reply"
+                rows={3}
+                maxLength={2000}
+                defaultValue={review?.reply ?? ""}
+                placeholder={`Reply to ${athlete.full_name.split(" ")[0]} (optional)`}
+                className="w-full rounded-xl border border-border bg-surface-2 px-4 py-3 outline-none focus:border-accent"
+              />
+              <ActionButton className="w-full rounded-xl bg-accent px-4 py-3 font-semibold text-accent-text">{review ? "Update" : "Send and mark as seen"}</ActionButton>
+              <p className="text-xs text-muted">Leave it empty to only tick it off. The athlete sees a reply on their Today screen.</p>
+            </form>
           </Card>
         )}
         <Link href={backHref} className="block w-full rounded-xl bg-accent px-4 py-3 text-center font-semibold text-accent-text">

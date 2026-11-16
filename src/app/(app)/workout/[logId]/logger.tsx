@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { displayOrder, nextGroupLetter, type LoggedSet, type LoggerRow } from "@/lib/logger-types";
-import { SUPERSET_COLORS, firstNumber, looksLikeTime, supersetLabels } from "@/lib/plan";
+import { SUPERSET_COLORS, firstNumber, looksLikeTime, supersetLabels, warmupSets } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/client";
-import { addWorkoutExercise, deleteSet, discardWorkout, finishWorkout, removeWorkoutExercise, saveSet, setSupersetGroups, setWorkoutOrder, type SetInput } from "../../athlete-actions";
+import { addWorkoutExercise, deleteSet, discardWorkout, finishWorkout, removeWorkoutExercise, saveSet, setSupersetGroups, setWorkoutOrder, swapExercise, type SetInput } from "../../athlete-actions";
 
 const KG_PER_LB = 0.45359237;
 
@@ -101,6 +101,9 @@ export function Logger(props: Props) {
   const [unsaved, setUnsaved] = useState<Pending[]>([]);
   const [outboxLoaded, setOutboxLoaded] = useState(false);
   const [skipAsk, setSkipAsk] = useState<string | null>(null);
+  const [warmOpen, setWarmOpen] = useState<Record<string, boolean>>({});
+  const [swapping, setSwapping] = useState(false);
+  const [swapError, setSwapError] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [view, setView] = useState<"log" | "finish">("log");
   const [lastSetAt, setLastSetAt] = useState<number | null>(null); // when the last set was ticked, for the rest clock
@@ -193,6 +196,25 @@ export function Logger(props: Props) {
       clearInterval(timer);
     };
   }, [unsaved.length, retryAll]);
+
+  // Swap a planned exercise for an approved alternative (or back). The page reloads with the
+  // alternative's own history, so this needs a connection.
+  const swap = async (row: LoggerRow, exerciseId: string | null) => {
+    setSwapError(null);
+    if ([...logged.values()].some((s) => s.rowId === row.id)) {
+      setSwapError("Un-tick the sets of this exercise first.");
+      return;
+    }
+    setSwapping(true);
+    try {
+      const res = await swapExercise(props.workoutLogId, row.id, exerciseId);
+      if (!res.ok) throw new Error(res.error ?? "Could not swap the exercise.");
+      window.location.reload();
+    } catch (e) {
+      setSwapError(e instanceof Error && e.message && !/fetch/i.test(e.message) ? e.message : "No connection. Try again in a moment.");
+      setSwapping(false);
+    }
+  };
 
   // Keep the screen on while logging, where the browser supports it.
   useEffect(() => {
@@ -612,6 +634,9 @@ export function Logger(props: Props) {
         : row.targetType === "rpe" && row.targetValue != null
           ? `target RPE ${row.targetValue}`
           : null;
+    // Warm-up sets, in the athlete's unit, from the weight of the first set (typed, planned or last time).
+    const work = warmOpen[row.id] ? Number((shown(row, 1, "weight") || suggestion(row, 1, "weight")).replace(",", ".")) || 0 : 0;
+    const warm = work > 0 ? warmupSets(work, unit === "lbs" ? 5 : row.weightStep) : [];
     const planLine = [row.sets && row.reps ? `${row.sets} × ${row.reps}` : row.reps, row.tempo ? `tempo ${row.tempo}` : null, targetLine].filter(Boolean).join(" · ");
 
     return (
@@ -622,6 +647,7 @@ export function Logger(props: Props) {
               {labels[row.id] && <span style={{ color }}>{labels[row.id]} </span>}
               {row.name}
             </h2>
+            {row.swappedFrom && <p className="text-xs text-muted">instead of {row.swappedFrom}</p>}
             {planLine && <p className="text-sm text-muted">{planLine}</p>}
           </div>
           {row.videoUrl && (
@@ -684,6 +710,26 @@ export function Logger(props: Props) {
 
         {skipAsk === row.id && row.source === "plan" && (
           <div className="mt-2 rounded-xl border border-border bg-surface-2 p-3">
+            {(row.swappedFrom || (row.alternatives ?? []).length > 0) && (
+              <div className="mb-3 border-b border-border pb-3">
+                <p className="text-sm">{row.swappedFrom ? `Swapped in for ${row.swappedFrom}.` : "Equipment taken or not available? Your coach approved these instead:"}</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {(row.alternatives ?? [])
+                    .filter((a) => a.id !== row.exerciseId)
+                    .map((a) => (
+                      <button key={a.id} type="button" disabled={swapping} onClick={() => swap(row, a.id)} className="rounded-lg border border-border bg-surface px-3 py-2 text-left text-sm disabled:opacity-50">
+                        {a.name}
+                      </button>
+                    ))}
+                  {row.swappedFrom && (
+                    <button type="button" disabled={swapping} onClick={() => swap(row, null)} className="rounded-lg border border-border px-3 py-2 text-left text-sm text-muted disabled:opacity-50">
+                      Back to {row.swappedFrom}
+                    </button>
+                  )}
+                </div>
+                {swapError && <p className="mt-2 text-sm text-accent">{swapError}</p>}
+              </div>
+            )}
             <p className="text-sm">Can&apos;t do {row.name} today? The open sets are marked as skipped for your coach.</p>
             <div className="mt-2 grid grid-cols-2 gap-2">
               <button type="button" onClick={() => setSkipAsk(null)} className="rounded-lg border border-border py-2 text-sm">
@@ -760,9 +806,28 @@ export function Logger(props: Props) {
         </div>
 
 
-        <button type="button" onClick={() => setExtra((x) => ({ ...x, [row.id]: (x[row.id] ?? 0) + 1 }))} className="mt-2 w-full rounded-lg bg-surface-2 py-2 text-sm text-muted">
-          + Add set
-        </button>
+        {warmOpen[row.id] && (
+          <p className="mt-2 rounded-lg bg-surface-2 px-3 py-2 text-sm">
+            {warm.length > 0 ? (
+              <>
+                <span className="text-muted">Warm-up for {trim(work)} {unit}: </span>
+                {warm.map((s) => `${trim(s.weight)} × ${s.reps}`).join(" · ")}
+              </>
+            ) : (
+              <span className="text-muted">{work > 0 ? "This weight is light enough to start right away." : "Fill in the weight of your first set, then the warm-up sets show here."}</span>
+            )}
+          </p>
+        )}
+        <div className="mt-2 flex gap-2">
+          {row.tracking === "load" && row.section === "workout" && (
+            <button type="button" onClick={() => setWarmOpen((x) => ({ ...x, [row.id]: !x[row.id] }))} aria-expanded={!!warmOpen[row.id]} className="rounded-lg bg-surface-2 px-3 py-2 text-sm text-muted">
+              Warm-up
+            </button>
+          )}
+          <button type="button" onClick={() => setExtra((x) => ({ ...x, [row.id]: (x[row.id] ?? 0) + 1 }))} className="flex-1 rounded-lg bg-surface-2 py-2 text-sm text-muted">
+            + Add set
+          </button>
+        </div>
       </section>
     );
   };

@@ -3,7 +3,7 @@ import { ExercisePicker } from "@/components/exercise-picker";
 import { ActionButton, BackLink, Card, Field, Notice, PrimaryButton, SecondaryButton, Select, inputClass } from "@/components/ui";
 import { requireCoach } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { archiveExercise, mergeExercise, updateExercise } from "../../coach-actions";
+import { addAlternative, archiveExercise, mergeExercise, removeAlternative, updateExercise } from "../../coach-actions";
 
 const TRACKING = [
   ["load", "Load (kg and reps)"],
@@ -34,6 +34,9 @@ export default async function ExercisePage({ params, searchParams }: PageProps<"
     !e.approved && e.created_by
       ? await supabase.from("athletes").select("full_name").eq("user_id", e.created_by).maybeSingle()
       : { data: null };
+
+  const { data: altData } = await supabase.from("exercise_alternatives").select("alt:exercises!exercise_alternatives_alternative_id_fkey(id, name)").eq("exercise_id", id);
+  const alternatives = ((altData ?? []) as unknown as { alt: { id: string; name: string } | null }[]).flatMap((a) => (a.alt ? [a.alt] : [])).sort((a, b) => a.name.localeCompare(b.name));
 
   const patterns = [...new Set((patternRows ?? []).map((r) => r.movement_pattern as string))].sort();
 
@@ -116,6 +119,31 @@ export default async function ExercisePage({ params, searchParams }: PageProps<"
           <PrimaryButton type="submit" pendingLabel="Saving…">
             {e.approved ? "Save" : "Approve and save"}
           </PrimaryButton>
+        </form>
+      </Card>
+
+      <Card>
+        <h2 className="font-semibold" id="alternatives">
+          Approved alternatives
+        </h2>
+        <p className="mt-1 text-sm text-muted">When this exercise is in a program, the athlete can swap it for one of these in a workout, for example when the equipment is taken. It works both ways.</p>
+        {alternatives.length > 0 && (
+          <ul className="mt-2 divide-y divide-border">
+            {alternatives.map((a) => (
+              <li key={a.id} className="flex items-center justify-between gap-3 py-2">
+                <span className="min-w-0 truncate">{a.name}</span>
+                <form action={removeAlternative.bind(null, id, a.id)}>
+                  <ActionButton aria-label={`Remove ${a.name}`} className="rounded-lg border border-border px-2.5 py-1.5 text-xs text-muted">
+                    Remove
+                  </ActionButton>
+                </form>
+              </li>
+            ))}
+          </ul>
+        )}
+        <form key={alternatives.length} action={addAlternative.bind(null, id)} className="mt-3 space-y-3">
+          <ExercisePicker />
+          <SecondaryButton type="submit">Add alternative</SecondaryButton>
         </form>
       </Card>
 

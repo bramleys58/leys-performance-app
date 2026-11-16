@@ -16,6 +16,10 @@ export type LoggerRow = {
   targetValue: number | null;
   /** Set when a percent is based on another lift than the exercise itself. */
   maxName?: string | null;
+  /** Alternatives the coach approved for this planned exercise. */
+  alternatives?: { id: string; name: string }[];
+  /** The planned exercise, when it was swapped for another one in this workout. */
+  swappedFrom?: string | null;
   askRpe: boolean;
   note: string | null;
   videoUrl: string | null;

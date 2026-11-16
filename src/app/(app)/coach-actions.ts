@@ -656,3 +656,29 @@ export async function deleteInjuryNote(athleteId: string, noteId: string) {
   await db.from("injury_notes").delete().eq("id", noteId).eq("athlete_id", athleteId);
   go(`/athletes/${athleteId}/injuries?saved=1`);
 }
+
+// ------------------------------------------------------------- alternatives
+
+/** Approves an alternative for an exercise. It works both ways: each can replace the other. */
+export async function addAlternative(exerciseId: string, fd: FormData) {
+  const db = await coachDb();
+  const back = `/library/${exerciseId}`;
+  const altId = text(fd, "exercise_id");
+  if (!altId) go(back + "?error=" + encodeURIComponent("Pick the alternative from the list."));
+  if (altId === exerciseId) go(back + "?error=" + encodeURIComponent("An exercise cannot be its own alternative."));
+  const { error } = await db.from("exercise_alternatives").upsert(
+    [
+      { exercise_id: exerciseId, alternative_id: altId },
+      { exercise_id: altId, alternative_id: exerciseId },
+    ],
+    { onConflict: "exercise_id,alternative_id" },
+  );
+  go(back + (error ? "?error=" + encodeURIComponent("Could not save the alternative.") : "?saved=1#alternatives"));
+}
+
+export async function removeAlternative(exerciseId: string, altId: string) {
+  const db = await coachDb();
+  await db.from("exercise_alternatives").delete().eq("exercise_id", exerciseId).eq("alternative_id", altId);
+  await db.from("exercise_alternatives").delete().eq("exercise_id", altId).eq("alternative_id", exerciseId);
+  go(`/library/${exerciseId}?saved=1#alternatives`);
+}

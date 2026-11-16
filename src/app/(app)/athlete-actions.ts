@@ -372,3 +372,28 @@ export async function saveWeeklyCheckIn(fd: FormData) {
   revalidatePath("/me");
   redirect(home + "?weekly=1");
 }
+
+/**
+ * Replaces a planned exercise by an approved alternative for this workout only,
+ * or puts the planned one back (exerciseId null). Not possible once sets are ticked.
+ */
+export async function swapExercise(workoutLogId: string, sessionExerciseId: string, exerciseId: string | null): Promise<{ ok: boolean; error?: string }> {
+  await requireUser();
+  const supabase = await createClient();
+  const { count } = await supabase.from("set_logs").select("id", { count: "exact", head: true }).eq("workout_log_id", workoutLogId).eq("session_exercise_id", sessionExerciseId);
+  if ((count ?? 0) > 0) return { ok: false, error: "Un-tick the sets of this exercise first." };
+
+  if (!exerciseId) {
+    const { error } = await supabase.from("workout_swaps").delete().eq("workout_log_id", workoutLogId).eq("session_exercise_id", sessionExerciseId);
+    revalidatePath(`/workout/${workoutLogId}`);
+    return { ok: !error };
+  }
+  const { data: exercise } = await supabase.from("exercises").select("id, name").eq("id", exerciseId).maybeSingle();
+  if (!exercise) return { ok: false, error: "That exercise no longer exists." };
+  // The database only accepts alternatives the coach approved.
+  const { error } = await supabase
+    .from("workout_swaps")
+    .upsert({ workout_log_id: workoutLogId, session_exercise_id: sessionExerciseId, exercise_id: exercise.id, exercise_name: exercise.name }, { onConflict: "workout_log_id,session_exercise_id" });
+  revalidatePath(`/workout/${workoutLogId}`);
+  return error ? { ok: false, error: "Could not swap the exercise." } : { ok: true };
+}

@@ -28,6 +28,15 @@ assert.equal(programWeek("2026-10-19", "2026-10-26", 4), 2);
   assert.deepEqual(ss.filter((s) => runs(s, "2026-11-12")).map((s) => s.id), ["b", "c", "d"]);
   assert.deepEqual(ss.filter((s) => runs(s, "2026-12-12")).map((s) => s.id), ["b", "c", "d"]);
 }
+{
+  const { warmupSets } = await import("../src/lib/plan.ts");
+  const w = (kg, step) => warmupSets(kg, step).map((s) => `${s.weight}x${s.reps}`).join(" ");
+  assert.equal(w(100, 2.5), "40x8 60x5 80x3 90x1");
+  assert.equal(w(60, 2.5), "25x8 35x5 47.5x3");
+  assert.equal(w(15, 2.5), "");
+  assert.equal(w(225, 5), "90x8 135x5 180x3 205x1");
+  assert.equal(w(NaN, 2.5), "");
+}
 console.log("plan.ts: all checks passed");
 
 {

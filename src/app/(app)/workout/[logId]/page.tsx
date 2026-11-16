@@ -45,7 +45,22 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
 
   type Row = PlanRow & { base: { name: string } | null; exercises: { tracking_type: TrackingType; weight_step: number; video_url: string | null; equipment: string | null } | null };
   const rows = sortRows((rowData ?? []) as Row[]);
-  const exerciseIds = [...new Set([...rows.map((r) => r.exercise_id), ...extras.map((e) => e.exercise_id)].filter(Boolean))] as string[];
+  // Swaps made in this workout, and the alternatives the coach approved for the planned exercises.
+  const plannedIds = [...new Set(rows.map((r) => r.exercise_id).filter(Boolean))] as string[];
+  const [{ data: swapData }, { data: altData }] = await Promise.all([
+    supabase.from("workout_swaps").select("session_exercise_id, exercise_id, exercise_name, exercises(tracking_type, weight_step, video_url)").eq("workout_log_id", logId),
+    plannedIds.length
+      ? supabase.from("exercise_alternatives").select("exercise_id, alt:exercises!exercise_alternatives_alternative_id_fkey(id, name, archived)").in("exercise_id", plannedIds)
+      : Promise.resolve({ data: [] }),
+  ]);
+  type Swap = { session_exercise_id: string; exercise_id: string; exercise_name: string; exercises: { tracking_type: TrackingType; weight_step: number; video_url: string | null } | null };
+  const swapBy = new Map(((swapData ?? []) as unknown as Swap[]).map((s) => [s.session_exercise_id, s]));
+  const altsBy = new Map<string, { id: string; name: string }[]>();
+  for (const a of (altData ?? []) as unknown as { exercise_id: string; alt: { id: string; name: string; archived: boolean } | null }[]) {
+    if (a.alt && !a.alt.archived) altsBy.set(a.exercise_id, [...(altsBy.get(a.exercise_id) ?? []), { id: a.alt.id, name: a.alt.name }]);
+  }
+
+  const exerciseIds = [...new Set([...rows.map((r) => r.exercise_id), ...extras.map((e) => e.exercise_id), ...[...swapBy.values()].map((s) => s.exercise_id)].filter(Boolean))] as string[];
   // A percent can be based on another lift, so those maxes are needed too.
   const maxIds = [...new Set([...exerciseIds, ...rows.map((r) => r.max_exercise_id)].filter(Boolean))] as string[];
 
@@ -64,6 +79,36 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
   const maxBy = new Map(((maxData ?? []) as { exercise_id: string; value: number }[]).map((m) => [m.exercise_id, Number(m.value)]));
 
   const loggerRows: LoggerRow[] = rows.map((r) => {
+    const alternatives = (r.exercise_id ? altsBy.get(r.exercise_id) : undefined) ?? [];
+    const swap = swapBy.get(r.id);
+    if (swap) {
+      // Swapped for this workout: the alternative's own history and settings, the planned sets and reps.
+      // A weight or percent target belongs to the planned lift, so it is dropped.
+      const prev = prevBy.get(swap.exercise_id) ?? [];
+      return {
+        id: r.id,
+        source: "plan" as const,
+        exerciseId: swap.exercise_id,
+        name: swap.exercise_name,
+        section: r.section,
+        supersetGroup: r.superset_group,
+        position: r.position,
+        sets: r.sets ?? 1,
+        reps: r.reps,
+        tempo: r.tempo,
+        targetType: r.target_type === "rpe" ? ("rpe" as const) : ("none" as const),
+        targetValue: r.target_type === "rpe" && r.target_value != null ? Number(r.target_value) : null,
+        askRpe: r.ask_rpe,
+        note: r.coaching_note,
+        videoUrl: swap.exercises?.video_url ?? null,
+        tracking: swap.exercises?.tracking_type ?? "load",
+        weightStep: Number(swap.exercises?.weight_step ?? 2.5),
+        plannedKg: null,
+        alternatives,
+        swappedFrom: r.display_name,
+        previous: prev.map((p) => ({ setNumber: p.set_number, weight: p.weight == null ? null : Number(p.weight), reps: p.reps, seconds: p.seconds == null ? null : Number(p.seconds), distance: p.distance == null ? null : Number(p.distance) })),
+      };
+    }
     const step = Number(r.exercises?.weight_step ?? 2.5);
     const previous = (r.exercise_id ? prevBy.get(r.exercise_id) : undefined) ?? [];
     const maxOf = r.max_exercise_id ?? r.exercise_id;
@@ -95,6 +140,7 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
       tracking: r.exercises?.tracking_type ?? "load",
       weightStep: step,
       plannedKg,
+      alternatives,
       previous: previous.map((p) => ({
         setNumber: p.set_number,
         weight: p.weight == null ? null : Number(p.weight),

@@ -90,6 +90,22 @@ export function weekNumbers(sessions: { week: number | null }[]): number[] {
   return [...new Set(sessions.map((s) => s.week).filter((w): w is number => w != null))].sort((a, b) => a - b);
 }
 
+/**
+ * Warm-up sets leading up to a working weight: about 40, 60 and 80 percent, plus a
+ * single at 90 percent for heavy work. Rounded to the plate step. Light work needs none.
+ */
+export function warmupSets(work: number, step = 2.5): { weight: number; reps: number }[] {
+  if (!Number.isFinite(work) || !(step > 0) || work < 8 * step) return [];
+  const ramp: [number, number][] = [[0.4, 8], [0.6, 5], [0.8, 3]];
+  if (work >= 40 * step) ramp.push([0.9, 1]);
+  const out: { weight: number; reps: number }[] = [];
+  for (const [share, reps] of ramp) {
+    const weight = roundToStep(work * share, step);
+    if (weight > 0 && weight < work && !out.some((s) => s.weight === weight)) out.push({ weight, reps });
+  }
+  return out;
+}
+
 /** Rows in display order: prep first, then workout, each by position. */
 export function sortRows<T extends { section: string; position: number }>(rows: T[]): T[] {
   return [...rows].sort((a, b) =>

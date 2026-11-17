@@ -119,7 +119,7 @@ export async function AthleteHome({ firstName, welcome = false, isCoach = false 
   const weeklyDone = Boolean(weeklyData);
   const weeklyCard =
     weekly.due && !weeklyDone ? (
-      <Link href="/weekly" className="flex items-center gap-3 rounded-2xl border border-accent bg-accent/10 px-4 py-4">
+      <Link href="/weekly" className={`flex items-center gap-3 rounded-2xl border px-4 py-4 ${weekly.isSunday ? "border-accent bg-accent/10" : "border-border bg-surface"}`}>
         <div className="min-w-0 flex-1">
           <p className="font-semibold">Weekly check-in</p>
           <p className="truncate text-sm text-muted">Week of {weekLabel(weekly.weekStart)} · 2 minutes</p>
@@ -197,22 +197,18 @@ export async function AthleteHome({ firstName, welcome = false, isCoach = false 
           <span className="mt-1 line-clamp-2 block">{r.reply}</span>
         </Link>
       ))}
-      {!athlete.tracking_only && (
+      {/* Sunday is check-in day: the weekly check-in leads. Other days it waits further down. */}
+      {!athlete.tracking_only && weekly.isSunday && (
         <>
-          {weekly.isSunday && !weeklyDone && <WeeklyPrompt weekLabel={weekLabel(weekly.weekStart)} />}
+          {!weeklyDone && <WeeklyPrompt weekLabel={weekLabel(weekly.weekStart)} />}
           {weeklyCard}
-          {checkInCard}
         </>
       )}
-      {habits.length > 0 && <HabitsCard habits={habits} done={habitDone} week={habitWeek} today={day} />}
 
       {sessions.length === 0 ? (
         <>
-          <Card>
-            <h2 className="font-semibold">No program yet</h2>
-            <p className="mt-2 text-sm text-muted">Your coach has not published a program for you yet. You can still log a free workout.</p>
-          </Card>
           {freeWorkout}
+          {!athlete.tracking_only && <p className="-mt-3 text-center text-sm text-muted">No program from your coach yet.</p>}
         </>
       ) : (
         <>
@@ -225,11 +221,18 @@ export async function AthleteHome({ firstName, welcome = false, isCoach = false 
             )}
           </section>
           {freeWorkout}
-          <section className="space-y-3">
-            <h2 className="text-xs font-semibold tracking-[0.2em] text-muted">THIS WEEK</h2>
-            {[...sorted.filter((s) => dayOf(s) != null), ...anyDay].map((s) => item(s))}
-          </section>
         </>
+      )}
+
+      {!athlete.tracking_only && checkInCard}
+      {habits.length > 0 && <HabitsCard habits={habits} done={habitDone} week={habitWeek} today={day} />}
+      {!athlete.tracking_only && !weekly.isSunday && weeklyCard}
+
+      {sessions.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-xs font-semibold tracking-[0.2em] text-muted">THIS WEEK</h2>
+          {[...sorted.filter((s) => dayOf(s) != null), ...anyDay].map((s) => item(s))}
+        </section>
       )}
 
       <div className="flex justify-center gap-6 text-sm text-muted">

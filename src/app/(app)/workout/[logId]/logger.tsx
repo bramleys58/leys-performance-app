@@ -39,6 +39,7 @@ const sameSet = (a: SetInput, b: SetInput) => rowKey(a) === rowKey(b) && a.setNu
 type Pending = SetInput & { remove?: boolean; stamp: number; failed?: boolean };
 const outboxKey = (workoutLogId: string) => `lp-outbox-${workoutLogId}`;
 const mirrorKey = (workoutLogId: string) => `lp-logged-${workoutLogId}`;
+const extraKey = (workoutLogId: string) => `lp-sets-${workoutLogId}`;
 /** The phone's own record of a workout's ticked sets. Records older than two weeks are cleaned up on the way. */
 function readMirror(workoutLogId: string): LoggedSet[] | null {
   try {
@@ -105,6 +106,7 @@ export function Logger(props: Props) {
   const [swapping, setSwapping] = useState(false);
   const [swapError, setSwapError] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+  const [setMenu, setSetMenu] = useState<string | null>(null); // "rowId:setNumber" whose number was tapped
   const [view, setView] = useState<"log" | "finish">("log");
   const [lastSetAt, setLastSetAt] = useState<number | null>(null); // when the last set was ticked, for the rest clock
 
@@ -142,6 +144,12 @@ export function Logger(props: Props) {
   useEffect(() => {
     const t = setTimeout(() => {
       const waiting = readOutbox(workoutLogId);
+      try {
+        const kept = JSON.parse(window.localStorage.getItem(extraKey(workoutLogId)) ?? "null");
+        if (kept && typeof kept === "object") setExtra(kept);
+      } catch {
+        // Nothing kept.
+      }
       // Opened without a connection: this page is a kept copy and may be older than what was
       // ticked since. The phone's own record of this workout is the newer one.
       const mirror = navigator.onLine ? null : readMirror(workoutLogId);
@@ -172,6 +180,17 @@ export function Logger(props: Props) {
       // Private mode or full storage: the sets still wait in memory while this screen is open.
     }
   }, [unsaved, outboxLoaded, workoutLogId]);
+
+  // Remember added or removed sets, so a reload keeps the same rows.
+  useEffect(() => {
+    if (!outboxLoaded) return;
+    try {
+      if (Object.keys(extra).length > 0) window.localStorage.setItem(extraKey(workoutLogId), JSON.stringify(extra));
+      else window.localStorage.removeItem(extraKey(workoutLogId));
+    } catch {
+      // No storage: nothing to do.
+    }
+  }, [extra, outboxLoaded, workoutLogId]);
 
   // Remember the ticked sets of this workout on the phone, for opening it without a connection.
   useEffect(() => {
@@ -362,6 +381,37 @@ export function Logger(props: Props) {
     setLogged(next);
     clearDraft(k);
     persist(entry, row);
+  };
+
+  /** Deletes one set; the sets after it move up one place, saved ones included. */
+  const deleteSetAt = (row: LoggerRow, n: number) => {
+    const count = setCount(row);
+    if (count <= 1) return;
+    const next = new Map(logged);
+    for (let s = n; s <= count; s++) {
+      const after = logged.get(keyOf(row.id, s + 1));
+      const here = logged.get(keyOf(row.id, s));
+      if (after) {
+        const moved = { ...after, setNumber: s };
+        next.set(keyOf(row.id, s), moved);
+        persist(moved, row);
+      } else if (here) {
+        next.delete(keyOf(row.id, s));
+        persist(here, row, true);
+      }
+    }
+    setLogged(next);
+    setDrafts((d) => {
+      const out = { ...d };
+      for (let s = n; s <= count; s++) {
+        const after = d[keyOf(row.id, s + 1)];
+        if (after) out[keyOf(row.id, s)] = after;
+        else delete out[keyOf(row.id, s)];
+      }
+      return out;
+    });
+    setExtra((x) => ({ ...x, [row.id]: count - 1 - row.sets }));
+    setSetMenu(null);
   };
 
   const skipExercise = (row: LoggerRow) => {
@@ -770,7 +820,15 @@ export function Logger(props: Props) {
               : "–";
             return (
               <div key={k} className="contents">
-                <span className={`flex h-10 items-center justify-center rounded-lg text-sm font-bold ${ticked && !saved?.skipped ? "bg-ok/15 text-ok" : "bg-surface-2"}`}>{n}</span>
+                <button
+                  type="button"
+                  onClick={() => setSetMenu(setMenu === k ? null : k)}
+                  aria-label={`Set ${n} options: ${row.name}`}
+                  aria-expanded={setMenu === k}
+                  className={`flex h-10 items-center justify-center rounded-lg text-sm font-bold ${setMenu === k ? "ring-2 ring-accent" : ""} ${ticked && !saved?.skipped ? "bg-ok/15 text-ok" : "bg-surface-2"}`}
+                >
+                  {n}
+                </button>
                 <span className="truncate text-sm text-muted">{saved?.skipped ? "skipped" : prevText}</span>
                 {inputs.map((i) =>
                   saved?.skipped ? (
@@ -800,6 +858,16 @@ export function Logger(props: Props) {
                 >
                   {saved?.skipped ? "↺" : "✓"}
                 </button>
+                {setMenu === k && (
+                  <div className="col-span-full flex gap-2 pb-1">
+                    <button type="button" onClick={() => setSetMenu(null)} className="flex-1 rounded-lg border border-border py-2 text-sm">
+                      Cancel
+                    </button>
+                    <button type="button" disabled={count <= 1} onClick={() => deleteSetAt(row, n)} className="flex-1 rounded-lg border border-accent/60 py-2 text-sm text-accent disabled:opacity-40">
+                      {count <= 1 ? "Last set stays" : `Delete set ${n}`}
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })}

@@ -94,6 +94,10 @@ export default async function AthletePage({ params, searchParams }: PageProps<"/
           <span className="block font-semibold">Injury log</span>
           <span className="block text-sm text-muted">Pain and injuries</span>
         </Link>
+        <a href="#habits" className="rounded-2xl border border-border bg-surface px-4 py-4">
+          <span className="block font-semibold">Habits</span>
+          <span className="block text-sm text-muted">{habitRows.length ? `${habitRows.length} active` : "Set daily habits"}</span>
+        </a>
         {!athlete.tracking_only && (
           <Link href={`/athletes/${athlete.id}/client`} className="rounded-2xl border border-border bg-surface px-4 py-4">
             <span className="block font-semibold">Client</span>

@@ -5,6 +5,7 @@ import { Card } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { type ClientPackage, packageState } from "@/lib/business";
 import { getWorkoutsToReview } from "@/lib/review";
+import { getVideoTodo } from "@/lib/video-todo";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function HomePage({ searchParams }: PageProps<"/">) {
@@ -34,7 +35,7 @@ async function CoachHome({ firstName, userId }: { firstName: string; userId: str
   ]);
   // Packages that need a look: unpaid, almost used up, ending soon.
   const openPkgs = (pkgs.data ?? []) as ClientPackage[];
-  const toReview = await getWorkoutsToReview(userId);
+  const [toReview, videoTodo] = await Promise.all([getWorkoutsToReview(userId), getVideoTodo(supabase)]);
   let business = 0;
   if (openPkgs.length > 0) {
     const ids = [...new Set(openPkgs.map((p) => p.athlete_id))];
@@ -62,7 +63,9 @@ async function CoachHome({ firstName, userId }: { firstName: string; userId: str
     { label: "Active athletes", value: athletes.count ?? 0, href: "/athletes" },
     { label: "Active programs", value: programs.count ?? 0 },
     { label: "Exercises", value: exercises.count ?? 0, href: "/library" },
-    { label: "Exercises to check", value: review.count ?? 0, href: "/library?review=check" },
+    { label: "Videos to film", value: videoTodo.length, href: "/library?todo=1" },
+    // Only while there is something to check.
+    ...((review.count ?? 0) > 0 ? [{ label: "Exercises to check", value: review.count ?? 0, href: "/library?review=check" }] : []),
   ];
 
   return (

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ActionButton, Card } from "@/components/ui";
 import { requireCoach } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { getVideoTodo } from "@/lib/video-todo";
 
 export const metadata = { title: "Exercise library | Leys Performance" };
 
@@ -30,9 +31,12 @@ export default async function LibraryPage({ searchParams }: PageProps<"/library"
   const review = one(params.review) === "check" ? "check" : one(params.review) === "1" ? "1" : "";
   const novideo = one(params.novideo) === "1";
   const pending = one(params.pending) === "1";
+  // Exercises athletes use that have no video yet, most used first: the filming list.
+  const todo = one(params.todo) === "1";
   const page = Math.max(1, Number.parseInt(one(params.page) || "1", 10) || 1);
 
   const supabase = await createClient();
+  if (todo) return <VideoTodo list={await getVideoTodo(supabase)} />;
 
   let query = supabase
     .from("exercises")
@@ -113,6 +117,9 @@ export default async function LibraryPage({ searchParams }: PageProps<"/library"
           <label className="flex items-center gap-2">
             <input type="checkbox" name="novideo" value="1" defaultChecked={novideo} /> No video
           </label>
+          <Link href="/library?todo=1" className="underline">
+            Videos to film
+          </Link>
           <label className="flex items-center gap-2">
             <input type="checkbox" name="pending" value="1" defaultChecked={pending} /> Added by athletes
           </label>
@@ -189,6 +196,42 @@ export default async function LibraryPage({ searchParams }: PageProps<"/library"
             <span />
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+function VideoTodo({ list }: { list: { id: string; name: string; movement_pattern: string | null; equipment: string | null; uses: number }[] }) {
+  return (
+    <div className="space-y-5">
+      <Link href="/library" className="text-sm text-muted">
+        ← Exercise library
+      </Link>
+      <div>
+        <h1 className="text-2xl font-bold">Videos to film</h1>
+        <p className="mt-1 text-sm text-muted">
+          Exercises in your programs or logged by athletes that have no video yet, most used first. Add the link on the exercise and it drops off this list.
+        </p>
+      </div>
+      {list.length === 0 ? (
+        <Card>
+          <p className="text-sm text-muted">Every exercise your athletes use has a video.</p>
+        </Card>
+      ) : (
+        <ol className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-surface">
+          {list.map((e, i) => (
+            <li key={e.id}>
+              <Link href={`/library/${e.id}`} className="flex items-center gap-3 px-4 py-3">
+                <span className="w-6 shrink-0 text-right text-sm tabular-nums text-muted">{i + 1}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium">{e.name}</span>
+                  {(e.movement_pattern || e.equipment) && <span className="block truncate text-sm text-muted">{[e.movement_pattern, e.equipment].filter(Boolean).join(" · ")}</span>}
+                </span>
+                <span className="shrink-0 text-xs tabular-nums text-muted">used {e.uses}×</span>
+              </Link>
+            </li>
+          ))}
+        </ol>
       )}
     </div>
   );

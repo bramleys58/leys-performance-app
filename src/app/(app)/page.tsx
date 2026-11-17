@@ -11,7 +11,7 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
   const sp = await searchParams;
   const user = await requireUser();
   const firstName = user.fullName.split(" ")[0];
-  return user.role === "coach" ? <CoachHome firstName={firstName} userId={user.id} /> : <AthleteHome firstName={firstName} welcome={sp.welcome === "1"} />;
+  return user.role === "coach" ? <CoachHome firstName={firstName} userId={user.id} /> : <AthleteHome firstName={firstName} welcome={sp.welcome === "1"} done={typeof sp.done === "string" ? sp.done : undefined} />;
 }
 
 async function CoachHome({ firstName, userId }: { firstName: string; userId: string }) {

@@ -110,7 +110,7 @@ export async function saveSet(input: SetInput): Promise<{ ok: boolean }> {
 }
 
 export async function finishWorkout(fd: FormData) {
-  await requireUser();
+  const user = await requireUser();
   const supabase = await createClient();
   const logId = String(fd.get("workout_log_id"));
   const rpe = Number.parseInt(String(fd.get("session_rpe") ?? ""), 10);
@@ -139,8 +139,13 @@ export async function finishWorkout(fd: FormData) {
   }
 
   revalidatePath("/");
+  revalidatePath("/me");
   revalidatePath(`/workout/${logId}`);
-  redirect(`/workout/${logId}`);
+  // Straight back to where they came from, with a short "saved" line there. The summary stays one tap away.
+  const { data: who } = await supabase.from("workout_logs").select("athlete_id, athletes!inner(user_id)").eq("id", logId).maybeSingle();
+  const ownerUser = (who?.athletes as unknown as { user_id: string | null } | null)?.user_id ?? null;
+  if (user.role === "coach" && who && ownerUser !== user.id) redirect(`/athletes/${who.athlete_id}?done=${logId}`);
+  redirect(`${user.role === "coach" ? "/me" : "/"}?done=${logId}`);
 }
 
 /** Reopens a finished workout so sets can be corrected. */

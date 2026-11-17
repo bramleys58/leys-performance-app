@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { WorkoutSaved } from "@/components/workout-saved";
 import { notFound } from "next/navigation";
 import { ActionButton, BackLink, Card, Field, Notice, SecondaryButton, Select, inputClass } from "@/components/ui";
 import { WeeklyAnswers } from "@/components/weekly-answers";
@@ -55,6 +56,7 @@ export default async function AthletePage({ params, searchParams }: PageProps<"/
     <div className="space-y-5">
       <BackLink href="/athletes">Athletes</BackLink>
       <h1 className="text-2xl font-bold">{athlete.full_name}</h1>
+      <WorkoutSaved logId={typeof sp.done === "string" ? sp.done : undefined} />
       {sp.saved && <Notice kind="ok">Saved.</Notice>}
       {sp.invited && <Notice kind="ok">Invite sent. The athlete gets an email with a link to set a password.</Notice>}
       {typeof sp.error === "string" && <Notice kind="error">{sp.error}</Notice>}

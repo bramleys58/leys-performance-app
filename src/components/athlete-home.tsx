@@ -10,6 +10,7 @@ import { weekLabel, weeklyTarget } from "@/lib/weekly";
 import { WeeklyPrompt } from "@/components/weekly-prompt";
 import { WEEKDAYS, isoWeekday, todayISO, weekFilter, weekRange } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/server";
+import { WorkoutSaved } from "@/components/workout-saved";
 
 export function today() {
   return new Intl.DateTimeFormat("en-GB", {
@@ -21,7 +22,7 @@ export function today() {
 }
 
 /** The athlete's Today screen. Also used for a coach who has their own athlete profile. */
-export async function AthleteHome({ firstName, welcome = false, isCoach = false }: { firstName: string; welcome?: boolean; isCoach?: boolean }) {
+export async function AthleteHome({ firstName, welcome = false, isCoach = false, done }: { firstName: string; welcome?: boolean; isCoach?: boolean; done?: string }) {
   const supabase = await createClient();
   const athlete = await getMyAthlete();
   const name = firstName || athlete?.full_name?.split(" ")[0] || "";
@@ -177,6 +178,7 @@ export async function AthleteHome({ firstName, welcome = false, isCoach = false 
   return (
     <div className="space-y-6">
       {heading}
+      <WorkoutSaved logId={done} />
       {welcome && (
         <Card>
           <h2 className="font-semibold">You&apos;re in. One last tip:</h2>

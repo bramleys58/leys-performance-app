@@ -197,8 +197,15 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
       return parts.join(" ") || "done";
     };
     const perExercise = loggerRows
-      .map((r) => ({ name: r.name, sets: logged.filter((x) => x.rowId === r.id).sort((a, b) => a.setNumber - b.setNumber) }))
+      .map((r) => ({ key: r.id, name: r.name, exerciseId: r.exerciseId, group: r.supersetGroup, sets: logged.filter((x) => x.rowId === r.id).sort((a, b) => a.setNumber - b.setNumber) }))
       .filter((e) => e.sets.length > 0);
+    // Exercises done back to back share a superset group; blocks of 2+ get a coloured bar.
+    const blocks: { group: string | null; items: typeof perExercise }[] = [];
+    for (const e of perExercise) {
+      const last = blocks[blocks.length - 1];
+      if (e.group && last && last.group === e.group) last.items.push(e);
+      else blocks.push({ group: e.group, items: [e] });
+    }
     const factor = athlete.unit === "lbs" ? 1 / KG_PER_LB : 1;
     const tonnage = done.reduce((t, s) => t + (s.weight && s.reps ? Number(s.weight) * s.reps : 0), 0) * factor;
     const timed = log.started_at ? Math.max(1, Math.round((new Date(log.finished_at).getTime() - new Date(log.started_at).getTime()) / 60000)) : null;
@@ -212,7 +219,7 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
       const e = epley(Number(s.weight), s.reps);
       if (e && e > (todayBest.get(s.exercise_id)?.e1rm ?? 0)) todayBest.set(s.exercise_id, { name: s.exercise_name, e1rm: e, weight: Number(s.weight), reps: s.reps });
     }
-    const prs: { name: string; weight: number; reps: number }[] = [];
+    const prs: { exerciseId: string; name: string; weight: number; reps: number }[] = [];
     if (todayBest.size > 0) {
       const { data: earlier } = await supabase
         .from("set_logs")
@@ -229,9 +236,19 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
       }
       for (const [id, b] of todayBest) {
         const prev = prevBest.get(id);
-        if (prev !== undefined && b.e1rm > prev + 0.01) prs.push({ name: b.name, weight: b.weight, reps: b.reps });
+        if (prev !== undefined && b.e1rm > prev + 0.01) prs.push({ exerciseId: id, name: b.name, weight: b.weight, reps: b.reps });
       }
     }
+
+    const prOf = new Map(prs.map((p) => [p.exerciseId, p]));
+
+    // Which workout this is for the athlete, counting every finished one up to this one.
+    const { count: workoutNumber } = await supabase
+      .from("workout_logs")
+      .select("id", { count: "exact", head: true })
+      .eq("athlete_id", athlete.id)
+      .not("finished_at", "is", null)
+      .lte("finished_at", log.finished_at);
 
     const fmt = (n: number) => new Intl.NumberFormat("en-GB", { maximumFractionDigits: 1 }).format(n);
     const tiles = [
@@ -244,9 +261,16 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
     return (
       <div className="space-y-5">
         <div>
-          <p className="text-sm text-ok">Workout done</p>
+          <p className="text-sm text-ok">
+            Workout done{workoutNumber ? <span className="text-muted"> · workout #{workoutNumber}</span> : null}
+          </p>
           <h1 className="mt-1 text-2xl font-bold">{log.session_name ?? "Workout"}</h1>
           {forClient && <p className="mt-1 text-sm text-muted">{athlete.full_name}</p>}
+          {prs.length > 0 && (
+            <p className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-ok/40 bg-ok/10 px-3 py-1 text-sm font-semibold text-ok">
+              <span aria-hidden>🏆</span> {prs.length} PR{prs.length === 1 ? "" : "s"} this session
+            </p>
+          )}
         </div>
         <div className="grid grid-cols-2 gap-3">
           {tiles.map((t) => (
@@ -286,15 +310,44 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
         {perExercise.length > 0 && (
           <Card>
             <h2 className="font-semibold">Sets</h2>
-            <ul className="mt-2 divide-y divide-border">
-              {perExercise.map((e) => (
-                <li key={e.name} className="py-2">
-                  <p className="text-sm font-medium">{e.name}</p>
-                  <p className="text-sm tabular-nums text-muted">{e.sets.map(setText).join(" · ")}</p>
-                </li>
-              ))}
-            </ul>
-            <p className="mt-2 text-xs text-muted">Weight × reps in {unitOf}, @ is RPE.</p>
+            <div className="mt-2 divide-y divide-border">
+              {blocks.map((b, bi) => {
+                const superset = b.items.length > 1;
+                return (
+                  <div key={b.items[0].key} className={superset ? `my-1 border-l-4 py-1 pl-3 ${bi % 2 ? "border-ok/70" : "border-accent/70"}` : ""}>
+                    {superset && <p className="pt-1 text-xs font-semibold tracking-wide text-muted">SUPERSET</p>}
+                    <ul>
+                      {b.items.map((e) => {
+                        const pr = e.exerciseId ? prOf.get(e.exerciseId) : undefined;
+                        let marked = false;
+                        return (
+                          <li key={e.key} className="py-2">
+                            <p className="flex items-center gap-2 text-sm font-medium">
+                              {e.name}
+                              {pr && <span className="rounded-full border border-ok/40 bg-ok/10 px-2 py-0.5 text-xs font-semibold text-ok">🏆 PR</span>}
+                            </p>
+                            <p className="text-sm tabular-nums text-muted">
+                              {e.sets.map((x, i) => {
+                                // The set that made the PR is shown in green.
+                                const isPr = !!pr && !marked && !x.skipped && x.weight != null && Math.abs(Number(x.weight) - pr.weight) < 0.001 && x.reps === pr.reps;
+                                if (isPr) marked = true;
+                                return (
+                                  <span key={x.setNumber}>
+                                    {i > 0 && " · "}
+                                    <span className={isPr ? "font-semibold text-ok" : ""}>{setText(x)}</span>
+                                  </span>
+                                );
+                              })}
+                            </p>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-xs text-muted">Weight × reps in {unitOf}, @ is RPE.{prs.length > 0 && " Green is a new PR (best estimated max so far)."}</p>
           </Card>
         )}
         {forClient && (

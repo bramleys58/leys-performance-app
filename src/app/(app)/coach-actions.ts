@@ -56,14 +56,21 @@ export async function createAthlete(fd: FormData) {
       sport: text(fd, "sport"),
       unit: text(fd, "unit") === "lbs" ? "lbs" : "kg",
       notes_language: text(fd, "notes_language") === "nl" ? "nl" : "en",
-      is_in_person: fd.get("is_in_person") === "on",
-      tracking_only: fd.get("tracking_only") === "on",
+      ...groupFlags(fd),
     })
     .select("id")
     .single();
   if (error || !data) go("/athletes?error=" + encodeURIComponent("Could not add the athlete."));
 
   go(`/athletes/${data.id}`);
+}
+
+/** The athlete's group (online, in person or logging only) as the two flags stored on the athlete. */
+function groupFlags(fd: FormData) {
+  const group = text(fd, "group");
+  if (group === "logging") return { is_in_person: false, tracking_only: true };
+  if (group === "in_person") return { is_in_person: true, tracking_only: false };
+  return { is_in_person: false, tracking_only: false };
 }
 
 export async function updateAthlete(fd: FormData) {
@@ -80,8 +87,7 @@ export async function updateAthlete(fd: FormData) {
       unit: text(fd, "unit") === "lbs" ? "lbs" : "kg",
       notes_language: text(fd, "notes_language") === "nl" ? "nl" : "en",
       status: status === "paused" || status === "archived" ? status : "active",
-      is_in_person: fd.get("is_in_person") === "on",
-      tracking_only: fd.get("tracking_only") === "on",
+      ...groupFlags(fd),
       notes: text(fd, "notes"),
     })
     .eq("id", id);

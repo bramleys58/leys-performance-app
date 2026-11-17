@@ -271,12 +271,11 @@ export default async function AthletePage({ params, searchParams }: PageProps<"/
               <option value="archived">Archived</option>
             </Select>
           </div>
-          <label className="flex items-center gap-2 text-sm text-muted">
-            <input type="checkbox" name="is_in_person" defaultChecked={athlete.is_in_person} /> In-person client
-          </label>
-          <label className="flex items-center gap-2 text-sm text-muted">
-            <input type="checkbox" name="tracking_only" defaultChecked={athlete.tracking_only} /> Tracking only (no daily or weekly check-ins)
-          </label>
+          <Select label="Group" name="group" defaultValue={athlete.tracking_only ? "logging" : athlete.is_in_person ? "in_person" : "online"}>
+            <option value="online">Online client</option>
+            <option value="in_person">In-person client</option>
+            <option value="logging">Logging only (independent, no check-ins)</option>
+          </Select>
           <label className="block">
             <span className="mb-1.5 block text-sm text-muted">Private notes</span>
             <textarea name="notes" rows={3} defaultValue={athlete.notes ?? ""} className={inputClass} />

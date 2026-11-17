@@ -232,7 +232,9 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
     const todayBest = new Map<string, { name: string; e1rm: number; weight: number; reps: number }>();
     for (const s of done) {
       if (!s.exercise_id || !s.weight || !s.reps) continue;
-      if ((loggerRows.find((r) => r.exerciseId === s.exercise_id)?.tracking ?? "load") !== "load") continue;
+      // Loaded lifts, and bodyweight exercises with added weight (weighted dips, chin-ups).
+      const tracking = loggerRows.find((r) => r.exerciseId === s.exercise_id)?.tracking ?? "load";
+      if (tracking !== "load" && tracking !== "bodyweight_reps") continue;
       const e = epley(Number(s.weight), s.reps);
       if (e && e > (todayBest.get(s.exercise_id)?.e1rm ?? 0)) todayBest.set(s.exercise_id, { name: s.exercise_name, e1rm: e, weight: Number(s.weight), reps: s.reps });
     }

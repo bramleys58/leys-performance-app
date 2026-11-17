@@ -119,7 +119,7 @@ export async function AthleteHome({ firstName, welcome = false, isCoach = false 
   const weeklyDone = Boolean(weeklyData);
   const weeklyCard =
     weekly.due && !weeklyDone ? (
-      <Link href="/weekly" className={`flex items-center gap-3 rounded-2xl border px-4 py-4 ${weekly.isSunday ? "border-accent bg-accent/10" : "border-border bg-surface"}`}>
+      <Link href="/weekly" className="flex items-center gap-3 rounded-2xl border border-accent bg-accent/10 px-4 py-4">
         <div className="min-w-0 flex-1">
           <p className="font-semibold">Weekly check-in</p>
           <p className="truncate text-sm text-muted">Week of {weekLabel(weekly.weekStart)} · 2 minutes</p>
@@ -197,10 +197,10 @@ export async function AthleteHome({ firstName, welcome = false, isCoach = false 
           <span className="mt-1 line-clamp-2 block">{r.reply}</span>
         </Link>
       ))}
-      {/* Sunday is check-in day: the weekly check-in leads. Other days it waits further down. */}
-      {!athlete.tracking_only && weekly.isSunday && (
+      {/* An open weekly check-in (Sunday, or missed) always leads. */}
+      {!athlete.tracking_only && (
         <>
-          {!weeklyDone && <WeeklyPrompt weekLabel={weekLabel(weekly.weekStart)} />}
+          {weekly.isSunday && !weeklyDone && <WeeklyPrompt weekLabel={weekLabel(weekly.weekStart)} />}
           {weeklyCard}
         </>
       )}
@@ -226,7 +226,6 @@ export async function AthleteHome({ firstName, welcome = false, isCoach = false 
 
       {!athlete.tracking_only && checkInCard}
       {habits.length > 0 && <HabitsCard habits={habits} done={habitDone} week={habitWeek} today={day} />}
-      {!athlete.tracking_only && !weekly.isSunday && weeklyCard}
 
       {sessions.length > 0 && (
         <section className="space-y-3">

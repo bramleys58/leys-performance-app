@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { HabitsCard } from "@/components/habits-card";
+import { weekDays } from "@/lib/habits";
 import { Card, SecondaryButton } from "@/components/ui";
 import { startFreeWorkout } from "@/app/(app)/athlete-actions";
 import { getMyAthlete } from "@/lib/athlete";
@@ -69,6 +71,16 @@ export async function AthleteHome({ firstName, welcome = false, isCoach = false 
       .order("reviewed_at", { ascending: false })
       .limit(3),
   ]);
+  // Habits the coach set, with this week's ticks.
+  const habitWeek = weekDays(day);
+  const [{ data: habitData }, { data: habitLogData }] = await Promise.all([
+    supabase.from("habits").select("id, name, target_per_week, position").eq("athlete_id", athlete.id).eq("archived", false).order("position"),
+    supabase.from("habit_logs").select("habit_id, day").eq("athlete_id", athlete.id).gte("day", habitWeek[0]).lte("day", habitWeek[6]),
+  ]);
+  const habits = (habitData ?? []) as { id: string; name: string; target_per_week: number }[];
+  const habitDone: Record<string, string[]> = {};
+  for (const l of (habitLogData ?? []) as { habit_id: string; day: string }[]) (habitDone[l.habit_id] ??= []).push(l.day);
+
   type Reply = { workout_log_id: string; reply: string; workout_logs: { session_name: string | null; performed_on: string } | null };
   const replies = (replyData ?? []) as unknown as Reply[];
 
@@ -192,6 +204,7 @@ export async function AthleteHome({ firstName, welcome = false, isCoach = false 
           {checkInCard}
         </>
       )}
+      {habits.length > 0 && <HabitsCard habits={habits} done={habitDone} week={habitWeek} today={day} />}
 
       {sessions.length === 0 ? (
         <>

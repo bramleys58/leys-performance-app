@@ -458,3 +458,17 @@ export async function setMyUnit(unit: "kg" | "lbs") {
   revalidatePath("/", "layout");
   redirect("/account?saved=unit");
 }
+
+// -------------------------------------------------------------------- habits
+
+/** Ticks a habit off for a day (today or earlier), or un-ticks it. */
+export async function toggleHabit(habitId: string, day: string, done: boolean): Promise<{ ok: boolean }> {
+  await requireUser();
+  const athlete = await getMyAthlete();
+  if (!athlete || !/^\d{4}-\d{2}-\d{2}$/.test(day) || day > todayISO()) return { ok: false };
+  const supabase = await createClient();
+  const { error } = done
+    ? await supabase.from("habit_logs").upsert({ habit_id: habitId, athlete_id: athlete.id, day }, { onConflict: "habit_id,day" })
+    : await supabase.from("habit_logs").delete().eq("habit_id", habitId).eq("day", day).eq("athlete_id", athlete.id);
+  return { ok: !error };
+}

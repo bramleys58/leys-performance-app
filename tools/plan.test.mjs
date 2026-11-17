@@ -154,3 +154,14 @@ console.log("weekly.ts: all checks passed");
   }
   console.log("progress-math.ts: all checks passed");
 }
+
+{
+  const { weekDays, weeksOnTarget } = await import("../src/lib/habits.ts");
+  assert.deepEqual(weekDays("2026-11-18"), ["2026-11-16", "2026-11-17", "2026-11-18", "2026-11-19", "2026-11-20", "2026-11-21", "2026-11-22"]);
+  // today Tue 17 Nov: last full weeks are 9-15 Nov, 2-8 Nov, 26 Oct-1 Nov, 19-25 Oct
+  const done = ["2026-11-09", "2026-11-10", "2026-11-11", "2026-11-03", "2026-10-27", "2026-10-28", "2026-10-29", "2026-11-16"];
+  assert.deepEqual(weeksOnTarget(done, 3, "2026-10-01", "2026-11-17"), { hit: 2, of: 4 });
+  assert.deepEqual(weeksOnTarget(done, 3, "2026-11-04", "2026-11-17"), { hit: 1, of: 2 }); // created in week of 2 Nov
+  assert.deepEqual(weeksOnTarget([], 3, "2026-11-16", "2026-11-17"), { hit: 0, of: 0 }); // brand new this week
+  console.log("habits.ts: all checks passed");
+}

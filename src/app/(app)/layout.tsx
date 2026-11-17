@@ -24,6 +24,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
             links: [
               { href: "/templates", label: "Program templates", icon: "🗂️" },
               { href: "/library", label: "Exercise library", icon: "📚" },
+              { href: "/resources", label: "Resources", icon: "📎" },
             ],
           },
           { title: "Business", links: [{ href: "/business", label: "Packages and income", icon: "💶" }] },
@@ -50,6 +51,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
               { href: "/calendar", label: "Calendar", icon: "📅" },
               { href: "/progress", label: "My progress", icon: "📈" },
               { href: "/history", label: "Workout history", icon: "🕘" },
+              { href: "/resources", label: "Resources", icon: "📎" },
             ],
           },
           { title: "Account", links: [{ href: "/account", label: "Account", icon: "👤" }] },

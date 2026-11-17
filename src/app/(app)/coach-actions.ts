@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient as createAdminClient } from "@supabase/supabase-js";
+import { MAX_RESOURCE_BYTES, RESOURCE_BUCKET, adminClient } from "@/lib/supabase/admin";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -792,4 +793,89 @@ export async function reviewWorkout(workoutLogId: string, fd: FormData) {
   revalidatePath("/");
   const next = String(fd.get("next") ?? "");
   go(next.startsWith("/workout/") || next === "/review" ? next : `/workout/${workoutLogId}?reviewed=1`);
+}
+
+// -------------------------------------------------------------------- habits
+
+export async function addHabit(athleteId: string, fd: FormData) {
+  const db = await coachDb();
+  const name = (text(fd, "habit_name") ?? "").slice(0, 80);
+  const target = Math.min(Math.max(int(fd, "target") ?? 7, 1), 7);
+  if (!name) go(`/athletes/${athleteId}?error=` + encodeURIComponent("Give the habit a name.") + "#habits");
+  const { count } = await db.from("habits").select("id", { count: "exact", head: true }).eq("athlete_id", athleteId).eq("archived", false);
+  await db.from("habits").insert({ athlete_id: athleteId, name, target_per_week: target, position: count ?? 0 });
+  go(`/athletes/${athleteId}?saved=1#habits`);
+}
+
+/** One-tap suggestion. */
+export async function addSuggestedHabit(athleteId: string, name: string, target: number) {
+  const db = await coachDb();
+  const { count } = await db.from("habits").select("id", { count: "exact", head: true }).eq("athlete_id", athleteId).eq("archived", false);
+  await db.from("habits").insert({ athlete_id: athleteId, name: name.slice(0, 80), target_per_week: Math.min(Math.max(target, 1), 7), position: count ?? 0 });
+  go(`/athletes/${athleteId}?saved=1#habits`);
+}
+
+/** Stops a habit. Its history stays, the athlete no longer sees it. */
+export async function stopHabit(athleteId: string, habitId: string) {
+  const db = await coachDb();
+  await db.from("habits").update({ archived: true }).eq("id", habitId).eq("athlete_id", athleteId);
+  go(`/athletes/${athleteId}?saved=1#habits`);
+}
+
+// ----------------------------------------------------------------- resources
+
+/**
+ * Step 1 of a file upload: a one-time link the browser uploads the file to,
+ * straight into the private bucket (so big PDFs never pass through this server).
+ */
+export async function createResourceUpload(fileName: string, size: number): Promise<{ ok: true; path: string; token: string } | { ok: false; error: string }> {
+  await coachDb();
+  if (!(size > 0) || size > MAX_RESOURCE_BYTES) return { ok: false, error: "Files can be at most 50 MB." };
+  const admin = adminClient();
+  if (!admin) return { ok: false, error: "File uploads need SUPABASE_SECRET_KEY in Vercel." };
+  const safe = fileName.normalize("NFKD").replace(/[^\w.\- ]+/g, "").replace(/\s+/g, "-").slice(-80) || "file";
+  const path = `${crypto.randomUUID()}/${safe}`;
+  const { data, error } = await admin.storage.from(RESOURCE_BUCKET).createSignedUploadUrl(path);
+  if (error || !data) return { ok: false, error: "Could not start the upload. Try again." };
+  return { ok: true, path: data.path, token: data.token };
+}
+
+/** Step 2: saves the resource (a link, or a file uploaded in step 1). */
+export async function saveResource(fd: FormData) {
+  const db = await coachDb();
+  const kind = text(fd, "kind") === "link" ? "link" : "file";
+  const title = (text(fd, "title") ?? "").slice(0, 120);
+  const category = (text(fd, "category") ?? "General").slice(0, 40);
+  const athleteId = text(fd, "athlete_id");
+  const fail = (m: string) => go("/resources?error=" + encodeURIComponent(m));
+  if (!title) return fail("Give it a title.");
+  let url: string | null = null;
+  if (kind === "link") {
+    url = text(fd, "url");
+    if (url && !/^https?:\/\//i.test(url)) url = "https://" + url;
+    if (!url || !/^https?:\/\/[^\s.]+\.[^\s]+$/i.test(url)) return fail("That link does not look right.");
+  }
+  const filePath = kind === "file" ? text(fd, "file_path") : null;
+  if (kind === "file" && (!filePath || !/^[0-9a-f-]{36}\/[^/]+$/.test(filePath))) return fail("Choose a file to upload.");
+  const { error } = await db.from("resources").insert({
+    title,
+    description: (text(fd, "description") ?? "").slice(0, 500) || null,
+    category,
+    kind,
+    url,
+    file_path: filePath,
+    file_name: kind === "file" ? (text(fd, "file_name") ?? "").slice(0, 120) || null : null,
+    file_size: kind === "file" ? int(fd, "file_size") : null,
+    athlete_id: athleteId,
+  });
+  if (error) return fail("Could not save it. Try again.");
+  go("/resources?saved=1");
+}
+
+export async function deleteResource(id: string) {
+  const db = await coachDb();
+  const { data: r } = await db.from("resources").select("file_path").eq("id", id).maybeSingle();
+  await db.from("resources").delete().eq("id", id);
+  if (r?.file_path) await adminClient()?.storage.from(RESOURCE_BUCKET).remove([r.file_path]);
+  go("/resources?saved=1");
 }

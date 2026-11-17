@@ -3,10 +3,11 @@ import { notFound } from "next/navigation";
 import { ActionButton, BackLink, Card, Field, Notice, SecondaryButton, Select, inputClass } from "@/components/ui";
 import { WeeklyAnswers } from "@/components/weekly-answers";
 import { requireCoach } from "@/lib/auth";
+import { HABIT_SUGGESTIONS, weekDays, weeksOnTarget } from "@/lib/habits";
 import { todayISO, weekFilter } from "@/lib/plan";
 import type { WeeklyCheckIn } from "@/lib/weekly";
 import { createClient } from "@/lib/supabase/server";
-import { copyProgram, createProgram, inviteAthlete, updateAthlete } from "../../coach-actions";
+import { addHabit, addSuggestedHabit, copyProgram, createProgram, inviteAthlete, stopHabit, updateAthlete } from "../../coach-actions";
 import { startFreeWorkout } from "../../athlete-actions";
 
 export default async function AthletePage({ params, searchParams }: PageProps<"/athletes/[id]">) {
@@ -15,10 +16,13 @@ export default async function AthletePage({ params, searchParams }: PageProps<"/
   const sp = await searchParams;
   const supabase = await createClient();
 
-  const [{ data: athlete }, { data: programs }, { data: others }] = await Promise.all([
+  const habitSince = new Date(Date.parse(todayISO() + "T12:00:00Z") - 42 * 86400000).toISOString().slice(0, 10);
+  const [{ data: athlete }, { data: programs }, { data: others }, { data: habitData }, { data: habitLogData }] = await Promise.all([
     supabase.from("athletes").select("*").eq("id", id).maybeSingle(),
     supabase.from("programs").select("id, name, phase, status, start_date, created_at").eq("athlete_id", id).order("created_at", { ascending: false }),
     supabase.from("programs").select("id, name, athlete_id, athletes(full_name)").neq("status", "archived").order("created_at", { ascending: false }).limit(200),
+    supabase.from("habits").select("id, name, target_per_week, created_at").eq("athlete_id", id).eq("archived", false).order("position"),
+    supabase.from("habit_logs").select("habit_id, day").eq("athlete_id", id).gte("day", habitSince),
   ]);
   if (!athlete) notFound();
 
@@ -30,6 +34,13 @@ export default async function AthletePage({ params, searchParams }: PageProps<"/
     supabase.from("workout_logs").select("id, session_name, performed_on, finished_at, session_rpe, duration_minutes").eq("athlete_id", id).order("performed_on", { ascending: false }).limit(8),
     supabase.from("weekly_check_ins").select("*").eq("athlete_id", id).order("week_start", { ascending: false }).limit(4),
   ]);
+
+  const today0 = todayISO();
+  const thisWeekDays = weekDays(today0);
+  const habitRows = ((habitData ?? []) as { id: string; name: string; target_per_week: number; created_at: string }[]).map((h) => {
+    const days = ((habitLogData ?? []) as { habit_id: string; day: string }[]).filter((l) => l.habit_id === h.id).map((l) => l.day);
+    return { ...h, thisWeek: days.filter((d) => thisWeekDays.includes(d)).length, record: weeksOnTarget(days, h.target_per_week, h.created_at.slice(0, 10), today0) };
+  });
 
   // In a multi-week block only this week's sessions are offered for logging.
   const startOf = new Map((programs ?? []).map((p) => [p.id, p.start_date ?? String(p.created_at).slice(0, 10)]));
@@ -119,6 +130,52 @@ export default async function AthletePage({ params, searchParams }: PageProps<"/
           ))}
         </section>
       )}
+
+      <Card>
+        <h2 id="habits" className="scroll-mt-20 font-semibold">
+          Habits
+        </h2>
+        {habitRows.length === 0 ? (
+          <p className="mt-1 text-sm text-muted">No habits yet. They show up on {athlete.full_name.split(" ")[0]}&apos;s Today screen to tick off.</p>
+        ) : (
+          <ul className="mt-2 divide-y divide-border">
+            {habitRows.map((h) => (
+              <li key={h.id} className="flex items-center gap-3 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium">{h.name}</p>
+                  <p className="text-sm text-muted">
+                    {h.target_per_week === 7 ? "every day" : `${h.target_per_week}× a week`} · this week {h.thisWeek}/{h.target_per_week}
+                    {h.record.of > 0 ? ` · on target ${h.record.hit} of last ${h.record.of} weeks` : ""}
+                  </p>
+                </div>
+                <form action={stopHabit.bind(null, id, h.id)}>
+                  <ActionButton aria-label={`Stop ${h.name}`} className="rounded-lg border border-border px-2.5 py-1.5 text-xs text-muted">
+                    Stop
+                  </ActionButton>
+                </form>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="mt-3 flex flex-wrap gap-2">
+          {HABIT_SUGGESTIONS.filter(([n]) => !habitRows.some((h) => h.name.toLowerCase() === n.toLowerCase())).map(([n, t]) => (
+            <form key={n} action={addSuggestedHabit.bind(null, id, n, t)}>
+              <ActionButton className="rounded-full border border-border bg-surface-2 px-3 py-1.5 text-sm">+ {n}</ActionButton>
+            </form>
+          ))}
+        </div>
+        <form action={addHabit.bind(null, id)} className="mt-3 grid grid-cols-[1fr_auto_auto] gap-2">
+          <input name="habit_name" required maxLength={80} placeholder="Own habit, e.g. Stretch before bed" className={inputClass} />
+          <select name="target" defaultValue="7" aria-label="Times per week" className={inputClass}>
+            {[7, 6, 5, 4, 3, 2, 1].map((n) => (
+              <option key={n} value={n}>
+                {n === 7 ? "Daily" : `${n}× / week`}
+              </option>
+            ))}
+          </select>
+          <ActionButton className="rounded-xl bg-accent px-4 py-2.5 font-semibold text-accent-text">Add</ActionButton>
+        </form>
+      </Card>
 
       <Card>
         <h2 className="font-semibold">Programs</h2>

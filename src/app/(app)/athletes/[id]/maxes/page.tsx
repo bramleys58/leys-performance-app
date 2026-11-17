@@ -30,7 +30,7 @@ export default async function MaxesPage({ params, searchParams }: PageProps<"/at
   if (!athlete) notFound();
 
   const unit = athlete.unit as "kg" | "lbs";
-  const show = (kg: number) => new Intl.NumberFormat("en-GB", { maximumFractionDigits: 1 }).format(unit === "lbs" ? kg / KG_PER_LB : kg);
+  const show = (kg: number) => new Intl.NumberFormat("en-GB", { maximumFractionDigits: 2 }).format(unit === "lbs" ? kg / KG_PER_LB : kg);
 
   type Max = { id: string; value: number; source: string; set_on: string; is_active: boolean; exercise_id: string; exercises: { name: string } | null };
   const maxes = (maxData ?? []) as unknown as Max[];

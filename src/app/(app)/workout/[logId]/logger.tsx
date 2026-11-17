@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { showWeight, storeKg } from "@/lib/units";
 import { displayOrder, nextGroupLetter, type LoggedSet, type LoggerRow } from "@/lib/logger-types";
 import { SUPERSET_COLORS, firstNumber, looksLikeTime, supersetLabels, warmupSets } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/client";
@@ -87,7 +88,9 @@ function columns(row: LoggerRow) {
 export function Logger(props: Props) {
   const { unit } = props;
   const [rows, setRows] = useState<LoggerRow[]>(props.rows);
-  const toDisplay = useCallback((kg: number) => (unit === "lbs" ? Math.round((kg / KG_PER_LB) * 2) / 2 : Math.round(kg * 4) / 4), [unit]);
+  // Entered weights show exactly as typed; a weight worked out from a percentage is rounded to a loadable number.
+  const toDisplay = useCallback((kg: number) => Number(showWeight(kg, unit)), [unit]);
+  const planDisplay = useCallback((kg: number) => (unit === "lbs" ? Math.round((kg / KG_PER_LB) * 2) / 2 : kg), [unit]);
   const toKg = useCallback((shown: number) => (unit === "lbs" ? shown * KG_PER_LB : shown), [unit]);
 
   const ordered = useMemo(() => displayOrder(rows), [rows]);
@@ -287,7 +290,7 @@ export function Logger(props: Props) {
     const planned = firstNumber(row.reps);
     if (field === "weight") {
       const kg = earlier?.weight ?? row.plannedKg ?? prevSame?.weight ?? null;
-      return kg == null ? "" : trim(toDisplay(kg));
+      return kg == null ? "" : trim(planDisplay(kg));
     }
     if (field === "reps") {
       const n = planned ?? earlier?.reps ?? prevSame?.reps ?? null;
@@ -321,7 +324,7 @@ export function Logger(props: Props) {
     return {
       rowId: row.id,
       setNumber,
-      weight: w == null ? null : Math.round(toKg(w) * 100) / 100,
+      weight: w == null ? null : storeKg(toKg(w)),
       reps: r == null ? null : Math.round(r),
       seconds: cols.seconds ? read("seconds") : null,
       distance: cols.distance ? read("distance") : null,
@@ -680,7 +683,7 @@ export function Logger(props: Props) {
     const grid = { gridTemplateColumns: `1.75rem minmax(0,1.3fr) ${inputs.map(() => "minmax(0,1fr)").join(" ")} 2.5rem` };
     const targetLine =
       row.targetType === "percent" && row.targetValue != null
-        ? `${row.targetValue}% of ${row.maxName ? row.maxName + " max" : "max"}${row.plannedKg != null ? ` = ${trim(toDisplay(row.plannedKg))} ${unit}` : " (no max set yet)"}`
+        ? `${row.targetValue}% of ${row.maxName ? row.maxName + " max" : "max"}${row.plannedKg != null ? ` = ${trim(planDisplay(row.plannedKg))} ${unit}` : " (no max set yet)"}`
         : row.targetType === "rpe" && row.targetValue != null
           ? `target RPE ${row.targetValue}`
           : null;

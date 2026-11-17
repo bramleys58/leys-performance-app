@@ -1,12 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { showWeight } from "@/lib/units";
 import { roundToStep } from "@/lib/plan";
 import { inputClass } from "./ui";
 
 const small = inputClass + " px-2 py-2 text-sm";
-const KG_PER_LB = 0.45359237;
-const trim = (n: number) => String(Math.round(n * 100) / 100);
 
 export type Lift = { id: string; name: string };
 
@@ -48,7 +47,7 @@ export function TargetFields({
   const pct = Number(v.replace(",", "."));
   const maxId = base || exerciseId;
   const max = maxes && maxId ? maxes[maxId] : undefined;
-  const show = (kg: number) => (unit === "lbs" ? trim(Math.round((kg / KG_PER_LB) * 2) / 2) : trim(kg));
+  const show = (kg: number) => showWeight(kg, unit);
   const baseName = lifts.find((l) => l.id === base)?.name;
 
   let hint: React.ReactNode = null;
@@ -68,7 +67,7 @@ export function TargetFields({
     else if (v && Number.isFinite(pct) && pct > 0)
       hint = (
         <>
-          = <span className="font-semibold text-text">{show(roundToStep((max * pct) / 100, step))} {unit}</span> (max {show(max)} {unit})
+          = <span className="font-semibold text-text">{unit === "lbs" ? String(Math.round(((roundToStep((max * pct) / 100, step)) / 0.45359237) * 2) / 2) : show(roundToStep((max * pct) / 100, step))} {unit}</span> (max {show(max)} {unit})
         </>
       );
     else hint = `Max ${show(max)} ${unit}. Fill in the percent.`;

@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient as createAdminClient } from "@supabase/supabase-js";
+import { storeKg } from "@/lib/units";
 import { MAX_RESOURCE_BYTES, RESOURCE_BUCKET, adminClient } from "@/lib/supabase/admin";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
@@ -433,7 +434,7 @@ export async function setMax(fd: FormData) {
   const { error } = await db.from("maxes").insert({
     athlete_id: athleteId,
     exercise_id: exerciseId,
-    value: Math.round(kg * 100) / 100,
+    value: storeKg(kg),
     source: text(fd, "source") === "estimated" ? "estimated" : "tested",
     set_on: text(fd, "set_on") ?? new Date().toISOString().slice(0, 10),
   });
@@ -766,7 +767,7 @@ export async function logAthleteBodyweight(athleteId: string, fd: FormData) {
   const today = new Date().toISOString().slice(0, 10);
   const dayRaw = String(fd.get("day") ?? "");
   const day = /^\d{4}-\d{2}-\d{2}$/.test(dayRaw) && dayRaw <= today ? dayRaw : today;
-  const { error } = await db.from("bodyweights").upsert({ athlete_id: athleteId, day, kg: Math.round((kg as number) * 100) / 100 }, { onConflict: "athlete_id,day" });
+  const { error } = await db.from("bodyweights").upsert({ athlete_id: athleteId, day, kg: storeKg(kg as number) }, { onConflict: "athlete_id,day" });
   go(back + `?bw=${error ? "error" : "saved"}#bodyweight`);
 }
 

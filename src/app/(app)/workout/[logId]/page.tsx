@@ -184,7 +184,7 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
 
     // Sets per exercise, in the order they were planned or added.
     const unitOf = athlete.unit;
-    const show = (kg: number) => new Intl.NumberFormat("en-GB", { maximumFractionDigits: 1 }).format(unitOf === "lbs" ? kg / KG_PER_LB : kg);
+    const show = (kg: number) => new Intl.NumberFormat("en-GB", { maximumFractionDigits: 2 }).format(unitOf === "lbs" ? kg / KG_PER_LB : kg);
     const setText = (x: LoggedSet) => {
       if (x.skipped) return "skipped";
       const parts: string[] = [];

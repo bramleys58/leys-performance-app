@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { storeKg } from "@/lib/units";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { getMyAthlete } from "@/lib/athlete";
@@ -322,7 +323,7 @@ export async function saveCheckIn(fd: FormData) {
       energy: scale("energy"),
       soreness: scale("soreness"),
       stress: scale("stress"),
-      bodyweight: weight == null || weight === 0 ? null : Math.round((athlete.unit === "lbs" ? weight * KG_PER_LB_CHECKIN : weight) * 100) / 100,
+      bodyweight: weight == null || weight === 0 ? null : storeKg(athlete.unit === "lbs" ? weight * KG_PER_LB_CHECKIN : weight),
       note: note ? note.slice(0, 500) : null,
     },
     { onConflict: "athlete_id,day" },
@@ -425,7 +426,7 @@ function bodyweightKg(fd: FormData, unit: "kg" | "lbs"): number | null {
   const n = Number(raw);
   if (raw === "" || !Number.isFinite(n)) return null;
   const kg = unit === "lbs" ? n * KG_PER_LB_CHECKIN : n;
-  return kg > 20 && kg < 400 ? Math.round(kg * 100) / 100 : null;
+  return kg > 20 && kg < 400 ? storeKg(kg) : null;
 }
 
 /** Today, or a chosen day that is not in the future and not older than a year. */

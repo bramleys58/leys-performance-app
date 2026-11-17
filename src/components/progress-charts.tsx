@@ -58,7 +58,7 @@ function Plot({ ticks, yPct, paths, dots, xLabels, label }: { ticks: number[]; y
 }
 
 const t = (d: string) => Date.parse(d + "T12:00:00Z");
-const fmt1 = (v: number) => (Math.round(v * 10) / 10).toString();
+const fmt1 = (v: number) => (Math.round(v * 100) / 100).toString();
 const INSET = 3; // percent kept free left and right so edge dots aren't cut off
 
 /** Bodyweight: weigh-ins as dots, 7-day average as a line. */

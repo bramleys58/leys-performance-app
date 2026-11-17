@@ -25,7 +25,7 @@ export function ProgressView({
 }) {
   const toUnit = (kg: number) => (unit === "lbs" ? kg / KG_PER_LB : kg);
   const n0 = (v: number) => new Intl.NumberFormat("en-GB", { maximumFractionDigits: 0 }).format(v);
-  const n1 = (v: number) => new Intl.NumberFormat("en-GB", { maximumFractionDigits: 1 }).format(v);
+  const n1 = (v: number) => new Intl.NumberFormat("en-GB", { maximumFractionDigits: 2 }).format(v);
   const short = (d: string) => new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" }).format(new Date(d + "T12:00:00Z"));
 
   const max = Math.max(...data.weeks.map((w) => w.tonnage), 1);

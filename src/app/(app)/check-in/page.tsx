@@ -1,5 +1,6 @@
 import { BackLink, Card, Notice, PrimaryButton, inputClass } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
+import { showWeight } from "@/lib/units";
 import { getMyAthlete } from "@/lib/athlete";
 import { SCALES, type CheckIn } from "@/lib/checkin";
 import { todayISO } from "@/lib/plan";
@@ -8,7 +9,6 @@ import { saveCheckIn } from "../athlete-actions";
 
 export const metadata = { title: "Check-in | Leys Performance" };
 
-const KG_PER_LB = 0.45359237;
 
 export default async function CheckInPage({ searchParams }: PageProps<"/check-in">) {
   const user = await requireUser();
@@ -30,7 +30,7 @@ export default async function CheckInPage({ searchParams }: PageProps<"/check-in
     supabase.from("athletes").select("checkin_consent_at").eq("id", athlete.id).maybeSingle(),
   ]);
   const c = existing as CheckIn | null;
-  const weight = c?.bodyweight == null ? "" : String(Math.round((athlete.unit === "lbs" ? Number(c.bodyweight) / KG_PER_LB : Number(c.bodyweight)) * 10) / 10);
+  const weight = c?.bodyweight == null ? "" : showWeight(Number(c.bodyweight), athlete.unit);
 
   return (
     <div className="space-y-5">

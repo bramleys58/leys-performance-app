@@ -5,6 +5,7 @@ import { showWeight, storeKg } from "@/lib/units";
 import { displayOrder, nextGroupLetter, type LoggedSet, type LoggerRow } from "@/lib/logger-types";
 import { SUPERSET_COLORS, firstNumber, looksLikeTime, supersetLabels, warmupSets } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/client";
+import { ExerciseNote } from "@/components/exercise-note";
 import { addWorkoutExercise, deleteSet, discardWorkout, finishWorkout, removeWorkoutExercise, saveSet, setSupersetGroups, setWorkoutOrder, swapExercise, type SetInput } from "../../athlete-actions";
 
 const KG_PER_LB = 0.45359237;
@@ -25,6 +26,8 @@ type Props = {
   performedOn: string;
   isCoach: boolean;
   savedMinutes: number | null;
+  initialNotes: Record<string, string>;
+  lastNotes: Record<string, string>;
 };
 
 type Field = "weight" | "reps" | "seconds" | "distance" | "rpe";
@@ -41,6 +44,7 @@ type Pending = SetInput & { remove?: boolean; stamp: number; failed?: boolean };
 const outboxKey = (workoutLogId: string) => `lp-outbox-${workoutLogId}`;
 const mirrorKey = (workoutLogId: string) => `lp-logged-${workoutLogId}`;
 const extraKey = (workoutLogId: string) => `lp-sets-${workoutLogId}`;
+const timedKey = (workoutLogId: string) => `lp-timed-${workoutLogId}`;
 /** The phone's own record of a workout's ticked sets. Records older than two weeks are cleaned up on the way. */
 function readMirror(workoutLogId: string): LoggedSet[] | null {
   try {
@@ -72,12 +76,20 @@ const parse = (v: string | undefined) => {
   return Number.isFinite(n) ? n : null;
 };
 
-/** Which columns an exercise needs. */
-function columns(row: LoggerRow) {
-  const timeLike = row.tracking === "time" || looksLikeTime(row.reps);
+/** Exercises where the athlete can switch between counting reps and timing the set. */
+const canSwitchTime = (row: LoggerRow) => row.tracking === "load" || row.tracking === "bodyweight_reps" || row.tracking === "reps_only" || row.tracking === "time";
+
+/** Timed by default: a time exercise, a time target ("20s"), or timed the last time it was logged. */
+const timedByDefault = (row: LoggerRow) =>
+  row.tracking === "time" || looksLikeTime(row.reps) || (row.previous.length > 0 && row.previous.every((p) => p.seconds != null && p.reps == null));
+
+/** Which columns an exercise needs. `timed` is the athlete's own reps/time choice, if they made one. */
+function columns(row: LoggerRow, timed?: boolean) {
   const distance = row.tracking === "distance" || row.tracking === "distance_height";
+  const timeLike = !distance && (canSwitchTime(row) && timed !== undefined ? timed : timedByDefault(row));
   return {
-    weight: !timeLike && !distance && (row.tracking === "load" || row.tracking === "bodyweight_reps"),
+    // Weighted holds (neck isos, planks, carries) keep the weight column.
+    weight: !distance && (row.tracking === "load" || row.tracking === "bodyweight_reps"),
     reps: !timeLike && !distance && row.tracking !== "completion",
     seconds: timeLike,
     distance,
@@ -88,6 +100,12 @@ function columns(row: LoggerRow) {
 export function Logger(props: Props) {
   const { unit } = props;
   const [rows, setRows] = useState<LoggerRow[]>(props.rows);
+  const [timed, setTimed] = useState<Record<string, boolean>>({}); // rowId -> athlete chose time (true) or reps (false)
+  const [noteOpen, setNoteOpen] = useState<Record<string, boolean>>({});
+  const openNote = (row: LoggerRow) => {
+    setNoteOpen((n) => ({ ...n, [row.id]: true }));
+    setSkipAsk(null);
+  };
   // Entered weights show exactly as typed; a weight worked out from a percentage is rounded to a loadable number.
   const toDisplay = useCallback((kg: number) => Number(showWeight(kg, unit)), [unit]);
   const planDisplay = useCallback((kg: number) => (unit === "lbs" ? Math.round((kg / KG_PER_LB) * 2) / 2 : kg), [unit]);
@@ -150,6 +168,8 @@ export function Logger(props: Props) {
       try {
         const kept = JSON.parse(window.localStorage.getItem(extraKey(workoutLogId)) ?? "null");
         if (kept && typeof kept === "object") setExtra(kept);
+        const keptTimed = JSON.parse(window.localStorage.getItem(timedKey(workoutLogId)) ?? "null");
+        if (keptTimed && typeof keptTimed === "object") setTimed(keptTimed);
       } catch {
         // Nothing kept.
       }
@@ -183,6 +203,17 @@ export function Logger(props: Props) {
       // Private mode or full storage: the sets still wait in memory while this screen is open.
     }
   }, [unsaved, outboxLoaded, workoutLogId]);
+
+  // Remember the reps/time choice, so a reload keeps it.
+  useEffect(() => {
+    if (!outboxLoaded) return;
+    try {
+      if (Object.keys(timed).length > 0) window.localStorage.setItem(timedKey(workoutLogId), JSON.stringify(timed));
+      else window.localStorage.removeItem(timedKey(workoutLogId));
+    } catch {
+      // No storage: nothing to do.
+    }
+  }, [timed, outboxLoaded, workoutLogId]);
 
   // Remember added or removed sets, so a reload keeps the same rows.
   useEffect(() => {
@@ -317,7 +348,7 @@ export function Logger(props: Props) {
   };
 
   const entryFor = (row: LoggerRow, setNumber: number): LoggedSet => {
-    const cols = columns(row);
+    const cols = columns(row, timed[row.id]);
     const read = (f: Field) => parse(shown(row, setNumber, f) || suggestion(row, setNumber, f));
     const w = cols.weight ? read("weight") : null;
     const r = cols.reps ? read("reps") : null;
@@ -669,7 +700,7 @@ export function Logger(props: Props) {
     }`;
 
   const exerciseCard = (row: LoggerRow) => {
-    const cols = columns(row);
+    const cols = columns(row, timed[row.id]);
     const group = (row.supersetGroup ?? "").toUpperCase();
     const color = SUPERSET_COLORS[group[0]];
     const count = setCount(row);
@@ -715,8 +746,23 @@ export function Logger(props: Props) {
 
         {row.note && <p className="mt-2 whitespace-pre-line rounded-lg bg-[#3a3320] px-3 py-2 text-sm text-[#f5e6b3]">{row.note}</p>}
 
+        {/* The athlete's own note, opened from the ··· menu, right under the name like in Strong. */}
+        <ExerciseNote
+          workoutLogId={workoutLogId}
+          athleteId={props.athleteId}
+          rowKey={row.id}
+          exerciseId={row.exerciseId}
+          name={row.name}
+          open={!!noteOpen[row.id]}
+          initial={props.initialNotes[row.id] ?? ""}
+          last={row.exerciseId ? (props.lastNotes[row.exerciseId] ?? null) : null}
+        />
+
         {skipAsk === row.id && row.source === "extra" && (
           <div className="mt-2 space-y-3 rounded-xl border border-border bg-surface-2 p-3">
+            <button type="button" onClick={() => openNote(row)} className="w-full rounded-lg border border-border bg-surface py-2 text-sm">
+              Add note
+            </button>
             <div className="grid grid-cols-2 gap-2">
               <button type="button" disabled={!reorder(row, -1)} onClick={() => moveExercise(row, -1)} className="rounded-lg border border-border bg-surface py-2 text-sm disabled:opacity-30">
                 ↑ Move up
@@ -763,6 +809,11 @@ export function Logger(props: Props) {
 
         {skipAsk === row.id && row.source === "plan" && (
           <div className="mt-2 rounded-xl border border-border bg-surface-2 p-3">
+            <div className="mb-3 border-b border-border pb-3">
+              <button type="button" onClick={() => openNote(row)} className="w-full rounded-lg border border-border bg-surface py-2 text-sm">
+              Add note
+            </button>
+            </div>
             {(row.swappedFrom || (row.alternatives ?? []).length > 0) && (
               <div className="mb-3 border-b border-border pb-3">
                 <p className="text-sm">{row.swappedFrom ? `Swapped in for ${row.swappedFrom}.` : "Equipment taken or not available? Your coach approved these instead:"}</p>
@@ -798,11 +849,24 @@ export function Logger(props: Props) {
         <div className="mt-3 grid items-center gap-x-2 gap-y-1.5 text-center" style={grid}>
           <span className="text-xs text-muted">Set</span>
           <span className="text-xs text-muted">Previous</span>
-          {inputs.map((i) => (
-            <span key={i.field} className="text-xs text-muted">
-              {i.head}
-            </span>
-          ))}
+          {inputs.map((i) =>
+            (i.field === "reps" || i.field === "seconds") && canSwitchTime(row) ? (
+              <select
+                key={i.field}
+                value={i.field}
+                onChange={(e) => setTimed((t) => ({ ...t, [row.id]: e.target.value === "seconds" }))}
+                aria-label={`Count ${row.name} in reps or seconds`}
+                className="mx-auto w-full max-w-[5.5rem] appearance-none rounded-md bg-surface-2 px-1 py-0.5 text-center text-xs text-muted"
+              >
+                <option value="reps">Reps ▾</option>
+                <option value="seconds">Sec ▾</option>
+              </select>
+            ) : (
+              <span key={i.field} className="text-xs text-muted">
+                {i.head}
+              </span>
+            ),
+          )}
           <span className="text-xs text-muted">✓</span>
 
           {Array.from({ length: count }, (_, idx) => {

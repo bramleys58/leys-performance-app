@@ -174,6 +174,23 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
 
   const backHref = forClient ? `/athletes/${athlete.id}` : user.role === "coach" ? "/me" : "/";
 
+  // Notes per exercise on this workout, and the latest note on each exercise from earlier workouts.
+  // All recent ones, not only for exercises already in it: exercises can be added during the workout.
+  const [{ data: noteRows }, { data: oldNotes }] = await Promise.all([
+    supabase.from("workout_exercise_notes").select("row_key, note").eq("workout_log_id", logId),
+    supabase
+      .from("workout_exercise_notes")
+      .select("exercise_id, note, updated_at")
+      .eq("athlete_id", athlete.id)
+      .neq("workout_log_id", logId)
+      .not("exercise_id", "is", null)
+      .order("updated_at", { ascending: false })
+      .limit(300),
+  ]);
+  const notes: Record<string, string> = Object.fromEntries((noteRows ?? []).map((n) => [n.row_key, n.note]));
+  const lastNotes: Record<string, string> = {};
+  for (const n of (oldNotes ?? []) as { exercise_id: string | null; note: string }[]) if (n.exercise_id && !(n.exercise_id in lastNotes)) lastNotes[n.exercise_id] = n.note;
+
   // ----------------------------------------------------------- summary view
   if (log.finished_at) {
     const done = sets.filter((s) => !s.skipped);
@@ -261,16 +278,9 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
     return (
       <div className="space-y-5">
         <div>
-          <p className="text-sm text-ok">
-            Workout done{workoutNumber ? <span className="text-muted"> · workout #{workoutNumber}</span> : null}
-          </p>
+          <p className="text-sm text-ok">Workout done</p>
           <h1 className="mt-1 text-2xl font-bold">{log.session_name ?? "Workout"}</h1>
           {forClient && <p className="mt-1 text-sm text-muted">{athlete.full_name}</p>}
-          {prs.length > 0 && (
-            <p className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-ok/40 bg-ok/10 px-3 py-1 text-sm font-semibold text-ok">
-              <span aria-hidden>🏆</span> {prs.length} PR{prs.length === 1 ? "" : "s"} this session
-            </p>
-          )}
         </div>
         <div className="grid grid-cols-2 gap-3">
           {tiles.map((t) => (
@@ -309,7 +319,26 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
         )}
         {perExercise.length > 0 && (
           <Card>
-            <h2 className="font-semibold">Sets</h2>
+            {/* Everything worth sharing sits in this one card, so a single screenshot shows it. */}
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="truncate font-semibold">{log.session_name ?? "Workout"}</h2>
+                <p className="text-sm text-muted">
+                  {new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(log.performed_on + "T12:00:00Z"))}
+                </p>
+              </div>
+              <div className="flex shrink-0 flex-col items-end gap-1">
+                {workoutNumber ? <span className="rounded-full bg-surface-2 px-2.5 py-0.5 text-xs font-semibold">Workout #{workoutNumber}</span> : null}
+                {prs.length > 0 && (
+                  <span className="rounded-full border border-ok/40 bg-ok/10 px-2.5 py-0.5 text-xs font-semibold text-ok">
+                    🏆 {prs.length} PR{prs.length === 1 ? "" : "s"}
+                  </span>
+                )}
+              </div>
+            </div>
+            <p className="mt-2 text-sm tabular-nums">
+              {[`${done.length} sets`, tonnage > 0 ? `${fmt(Math.round(tonnage))} ${athlete.unit}` : null, minutes != null ? `${minutes} min` : null, log.session_rpe != null ? `RPE ${log.session_rpe}` : null].filter(Boolean).join(" · ")}
+            </p>
             <div className="mt-2 divide-y divide-border">
               {blocks.map((b, bi) => {
                 const superset = b.items.length > 1;
@@ -326,6 +355,7 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
                               {e.name}
                               {pr && <span className="rounded-full border border-ok/40 bg-ok/10 px-2 py-0.5 text-xs font-semibold text-ok">🏆 PR</span>}
                             </p>
+                            {notes[e.key] && <p className="mt-0.5 whitespace-pre-line text-sm italic text-text/80">“{notes[e.key]}”</p>}
                             <p className="text-sm tabular-nums text-muted">
                               {e.sets.map((x, i) => {
                                 // The set that made the PR is shown in green.
@@ -397,6 +427,8 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
       performedOn={log.performed_on}
       isCoach={user.role === "coach"}
       savedMinutes={log.duration_minutes ?? null}
+      initialNotes={notes}
+      lastNotes={lastNotes}
     />
   );
 }

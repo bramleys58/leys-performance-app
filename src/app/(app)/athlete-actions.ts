@@ -160,6 +160,21 @@ export async function reopenWorkout(fd: FormData) {
 }
 
 /** Removes one logged set (un-ticking it on the logging screen). */
+/** Saves (or clears, when empty) the athlete's note on one exercise of a workout. */
+export async function saveExerciseNote(input: { workoutLogId: string; athleteId: string; rowKey: string; exerciseId: string | null; note: string }): Promise<{ ok: boolean }> {
+  await requireUser();
+  const supabase = await createClient();
+  const note = input.note.trim().slice(0, 500);
+  const key = { workout_log_id: input.workoutLogId, row_key: input.rowKey.slice(0, 80) };
+  const { error } = note
+    ? await supabase
+        .from("workout_exercise_notes")
+        .upsert({ ...key, athlete_id: input.athleteId, exercise_id: input.exerciseId, note, updated_at: new Date().toISOString() }, { onConflict: "workout_log_id,row_key" })
+    : await supabase.from("workout_exercise_notes").delete().match(key);
+  if (!error) revalidatePath(`/workout/${input.workoutLogId}`);
+  return { ok: !error };
+}
+
 export async function deleteSet(workoutLogId: string, rowId: string, source: "plan" | "extra", setNumber: number): Promise<{ ok: boolean }> {
   await requireUser();
   const supabase = await createClient();

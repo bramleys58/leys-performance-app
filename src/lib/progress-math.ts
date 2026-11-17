@@ -145,3 +145,24 @@ export function liftSummaries(liftIds: string[], names: Map<string, string>, set
     return { exerciseId: id, name: names.get(id) ?? mine[0]?.name ?? "Lift", before, blockBest, blockBestSet, weekly, prDays, repBests };
   });
 }
+
+/** Axis from round numbers, at least 2 kg (or lbs) tall, so a few close weigh-ins don't blow up into noise. */
+export function weightAxis(values: number[]) {
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const mid = (min + max) / 2;
+  const span = Math.max(max - min, 2);
+  // The smallest round step that fits everything in at most 4 gaps (5 lines).
+  for (const step of [0.5, 1, 2, 5, 10, 20, 50]) {
+    let lo = Math.floor(Math.min(min, mid - span / 2) / step) * step;
+    let hi = Math.ceil(Math.max(max, mid + span / 2) / step) * step;
+    // A point right on the edge line gets a little room.
+    if (min - lo < step * 0.1) lo -= step;
+    if (hi - max < step * 0.1) hi += step;
+    if ((hi - lo) / step > 4.001) continue;
+    const ticks: number[] = [];
+    for (let v = lo; v <= hi + 1e-9; v += step) ticks.push(Math.round(v * 10) / 10);
+    return { lo, hi, ticks, step };
+  }
+  return { lo: min - 50, hi: max + 50, ticks: [min - 50, max + 50], step: 100 };
+}

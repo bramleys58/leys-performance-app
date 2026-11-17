@@ -1,58 +1,92 @@
 /** Small server-rendered charts for the progress page. Every chart has a table or text fallback next to it. */
 
+import { weightAxis } from "@/lib/progress-math";
+
 type BwPoint = { day: string; kg: number; avg: number };
 
-const W = 640;
-const H = 220;
-const PAD = { top: 14, right: 14, bottom: 34, left: 64 };
+type Dot = { key: string; x: number; y: number; title: string; big?: boolean; solid?: boolean };
+
+/**
+ * Plot area drawn in percent: lines in a stretched SVG (strokes keep their width),
+ * dots and labels as plain HTML so text stays readable at any screen width.
+ */
+function Plot({ ticks, yPct, paths, dots, xLabels, label }: { ticks: number[]; yPct: (v: number) => number; paths: string[]; dots: Dot[]; xLabels: { key: string; x: number; text: string }[]; label: string }) {
+  const fmt = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
+  return (
+    <div role="img" aria-label={label} className="mt-5 grid grid-cols-[2.75rem_1fr] gap-x-2">
+      <div className="relative h-44">
+        {ticks.map((v) => (
+          <span key={v} className="absolute right-0 -translate-y-1/2 text-xs tabular-nums text-muted" style={{ top: `${yPct(v)}%` }}>
+            {fmt(v)}
+          </span>
+        ))}
+      </div>
+      <div className="relative h-44">
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 h-full w-full overflow-visible" aria-hidden>
+          {ticks.map((v) => (
+            <line key={v} x1="0" x2="100" y1={yPct(v)} y2={yPct(v)} className="stroke-border" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+          ))}
+          {paths.map((d, i) => (
+            <path key={i} d={d} fill="none" className="stroke-accent" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+          ))}
+        </svg>
+        {dots.map((d) => (
+          <span
+            key={d.key}
+            title={d.title}
+            className="absolute flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center"
+            style={{ left: `${d.x}%`, top: `${d.y}%` }}
+          >
+            <span className={`block rounded-full border-2 border-surface ${d.big ? "h-3.5 w-3.5" : "h-2.5 w-2.5"} ${d.solid ? "bg-accent" : "bg-text/40"}`} />
+          </span>
+        ))}
+      </div>
+      <div />
+      <div className="relative mt-1 h-4">
+        {xLabels.map((l, i) => (
+          <span
+            key={l.key}
+            className={`absolute whitespace-nowrap text-xs text-muted ${i === 0 && xLabels.length > 1 ? "" : i === xLabels.length - 1 ? "-translate-x-full" : "-translate-x-1/2"}`}
+            style={{ left: `${l.x}%` }}
+          >
+            {l.text}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const t = (d: string) => Date.parse(d + "T12:00:00Z");
+const fmt1 = (v: number) => (Math.round(v * 10) / 10).toString();
+const INSET = 3; // percent kept free left and right so edge dots aren't cut off
 
 /** Bodyweight: weigh-ins as dots, 7-day average as a line. */
 export function BodyweightChart({ points, toUnit, unit, short }: { points: BwPoint[]; toUnit: (kg: number) => number; unit: string; short: (d: string) => string }) {
   if (points.length < 2) return null;
-  const t = (d: string) => Date.parse(d + "T12:00:00Z");
   const x0 = t(points[0].day);
   const x1 = Math.max(t(points[points.length - 1].day), x0 + 86400000);
-  const vals = points.flatMap((p) => [toUnit(p.kg), toUnit(p.avg)]);
-  let lo = Math.min(...vals);
-  let hi = Math.max(...vals);
-  const padY = Math.max((hi - lo) * 0.15, 0.5);
-  lo -= padY;
-  hi += padY;
-  const x = (d: string) => PAD.left + ((t(d) - x0) / (x1 - x0)) * (W - PAD.left - PAD.right);
-  const y = (v: number) => PAD.top + (1 - (v - lo) / (hi - lo)) * (H - PAD.top - PAD.bottom);
-  const ticks = [lo + padY, (lo + hi) / 2, hi - padY];
-  const line = points.map((p, i) => `${i ? "L" : "M"}${x(p.day).toFixed(1)},${y(toUnit(p.avg)).toFixed(1)}`).join(" ");
-  const fmt = (v: number) => (Math.round(v * 10) / 10).toString();
+  const { lo, hi, ticks } = weightAxis(points.flatMap((p) => [toUnit(p.kg), toUnit(p.avg)]));
+  const xPct = (d: string) => INSET + ((t(d) - x0) / (x1 - x0)) * (100 - 2 * INSET);
+  const yPct = (v: number) => (1 - (v - lo) / (hi - lo)) * 100;
+  const line = points.map((p, i) => `${i ? "L" : "M"}${xPct(p.day).toFixed(2)},${yPct(toUnit(p.avg)).toFixed(2)}`).join(" ");
+  const first = points[0].day;
+  const last = points[points.length - 1].day;
 
   return (
-    <figure className="mt-3">
-      <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label={`Bodyweight from ${short(points[0].day)} to ${short(points[points.length - 1].day)}, ${fmt(toUnit(points[0].avg))} to ${fmt(toUnit(points[points.length - 1].avg))} ${unit} on the 7-day average`}>
-        {ticks.map((v) => (
-          <g key={v}>
-            <line x1={PAD.left} x2={W - PAD.right} y1={y(v)} y2={y(v)} className="stroke-border" strokeWidth="1" />
-            <text x={PAD.left - 10} y={y(v) + 7} textAnchor="end" className="fill-muted" fontSize="22">
-              {fmt(v)}
-            </text>
-          </g>
-        ))}
-        <text x={PAD.left} y={H - 4} className="fill-muted" fontSize="22">
-          {short(points[0].day)}
-        </text>
-        <text x={W - PAD.right} y={H - 4} textAnchor="end" className="fill-muted" fontSize="22">
-          {short(points[points.length - 1].day)}
-        </text>
-        <path d={line} fill="none" className="stroke-accent" strokeWidth="3.5" strokeLinejoin="round" strokeLinecap="round" />
-        {points.map((p) => (
-          <g key={p.day}>
-            <circle cx={x(p.day)} cy={y(toUnit(p.kg))} r="6" className="fill-text/40 stroke-surface" strokeWidth="2" />
-            {/* Bigger invisible target for the hover tooltip */}
-            <circle cx={x(p.day)} cy={y(toUnit(p.kg))} r="16" fill="transparent">
-              <title>{`${short(p.day)}: ${fmt(toUnit(p.kg))} ${unit} (7-day average ${fmt(toUnit(p.avg))})`}</title>
-            </circle>
-          </g>
-        ))}
-      </svg>
-      <figcaption className="mt-1 flex gap-4 text-xs text-muted">
+    <figure>
+      <Plot
+        label={`Bodyweight from ${short(first)} to ${short(last)}, ${fmt1(toUnit(points[0].avg))} to ${fmt1(toUnit(points[points.length - 1].avg))} ${unit} on the 7-day average`}
+        ticks={ticks}
+        yPct={yPct}
+        paths={[line]}
+        dots={points.map((p) => ({ key: p.day, x: xPct(p.day), y: yPct(toUnit(p.kg)), title: `${short(p.day)}: ${fmt1(toUnit(p.kg))} ${unit} (7-day average ${fmt1(toUnit(p.avg))})` }))}
+        xLabels={[
+          { key: "a", x: xPct(first), text: short(first) },
+          { key: "b", x: xPct(last), text: short(last) },
+        ]}
+      />
+      <figcaption className="mt-2 flex gap-4 text-xs text-muted">
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-2 w-2 rounded-full bg-text/40" /> Weigh-in
         </span>
@@ -103,55 +137,38 @@ export function WeeklyWeightChart({
   short: (d: string) => string;
 }) {
   if (weeks.length < 2) return null;
-  const t = (d: string) => Date.parse(d + "T12:00:00Z");
   const x0 = t(weeks[0].monday);
   const x1 = t(weeks[weeks.length - 1].monday);
-  const vals = weeks.map((w) => toUnit(w.avg));
-  let lo = Math.min(...vals);
-  let hi = Math.max(...vals);
-  const padY = Math.max((hi - lo) * 0.15, 0.5);
-  lo -= padY;
-  hi += padY;
-  const x = (d: string) => PAD.left + ((t(d) - x0) / Math.max(x1 - x0, 1)) * (W - PAD.left - PAD.right);
-  const y = (v: number) => PAD.top + (1 - (v - lo) / (hi - lo)) * (H - PAD.top - PAD.bottom);
-  const ticks = [lo + padY, (lo + hi) / 2, hi - padY];
-  const fmt = (v: number) => (Math.round(v * 10) / 10).toString();
+  const { lo, hi, ticks } = weightAxis(weeks.map((w) => toUnit(w.avg)));
+  const xPct = (d: string) => INSET + ((t(d) - x0) / Math.max(x1 - x0, 1)) * (100 - 2 * INSET);
+  const yPct = (v: number) => (1 - (v - lo) / (hi - lo)) * 100;
   let d = "";
   weeks.forEach((w, i) => {
     const joined = i > 0 && w.change != null;
-    d += `${joined ? "L" : "M"}${x(w.monday).toFixed(1)},${y(toUnit(w.avg)).toFixed(1)} `;
+    d += `${joined ? "L" : "M"}${xPct(w.monday).toFixed(2)},${yPct(toUnit(w.avg)).toFixed(2)} `;
   });
-  const every = weeks.length > 8 ? 2 : 1;
+  // Only as many date labels as fit on a phone.
+  const every = Math.max(1, Math.ceil(weeks.length / 4));
+  const labelled = weeks.filter((_, i) => (weeks.length - 1 - i) % every === 0);
 
   return (
-    <figure className="mt-3">
-      <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label={`Weekly average bodyweight: ${weeks.map((w) => `week of ${short(w.monday)} ${fmt(toUnit(w.avg))} ${unit}`).join(", ")}`}>
-        {ticks.map((v) => (
-          <g key={v}>
-            <line x1={PAD.left} x2={W - PAD.right} y1={y(v)} y2={y(v)} className="stroke-border" strokeWidth="1" />
-            <text x={PAD.left - 10} y={y(v) + 7} textAnchor="end" className="fill-muted" fontSize="22">
-              {fmt(v)}
-            </text>
-          </g>
-        ))}
-        {weeks.map((w, i) =>
-          i % every === (weeks.length - 1) % every ? (
-            <text key={w.monday} x={x(w.monday)} y={H - 4} textAnchor={i === 0 ? "start" : i === weeks.length - 1 ? "end" : "middle"} className="fill-muted" fontSize="20">
-              {short(w.monday)}
-            </text>
-          ) : null,
-        )}
-        <path d={d} fill="none" className="stroke-accent" strokeWidth="3.5" strokeLinejoin="round" strokeLinecap="round" />
-        {weeks.map((w, i) => (
-          <g key={w.monday}>
-            <circle cx={x(w.monday)} cy={y(toUnit(w.avg))} r={i === weeks.length - 1 ? 8 : 6} className="fill-accent stroke-surface" strokeWidth="2" />
-            <circle cx={x(w.monday)} cy={y(toUnit(w.avg))} r="18" fill="transparent">
-              <title>{`Week of ${short(w.monday)}: ${fmt(toUnit(w.avg))} ${unit} average of ${w.count} weigh-in${w.count === 1 ? "" : "s"}${w.change != null ? `, ${w.change > 0 ? "+" : ""}${fmt(toUnit(w.change))} vs the week before` : ""}`}</title>
-            </circle>
-          </g>
-        ))}
-      </svg>
-      <figcaption className="mt-1 text-xs text-muted">Average per week (Monday to Sunday). A gap means a week without weigh-ins.</figcaption>
+    <figure>
+      <Plot
+        label={`Weekly average bodyweight: ${weeks.map((w) => `week of ${short(w.monday)} ${fmt1(toUnit(w.avg))} ${unit}`).join(", ")}`}
+        ticks={ticks}
+        yPct={yPct}
+        paths={[d]}
+        dots={weeks.map((w, i) => ({
+          key: w.monday,
+          x: xPct(w.monday),
+          y: yPct(toUnit(w.avg)),
+          solid: true,
+          big: i === weeks.length - 1,
+          title: `Week of ${short(w.monday)}: ${fmt1(toUnit(w.avg))} ${unit} average of ${w.count} weigh-in${w.count === 1 ? "" : "s"}${w.change != null ? `, ${w.change > 0 ? "+" : ""}${fmt1(toUnit(w.change))} vs the week before` : ""}`,
+        }))}
+        xLabels={labelled.map((w) => ({ key: w.monday, x: xPct(w.monday), text: short(w.monday) }))}
+      />
+      <figcaption className="mt-2 text-xs text-muted">Average per week (Monday to Sunday). A gap means a week without weigh-ins.</figcaption>
     </figure>
   );
 }

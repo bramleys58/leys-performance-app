@@ -152,6 +152,18 @@ console.log("weekly.ts: all checks passed");
     assert.equal(weeklyRate(wk.slice(0, 1)), null);
     assert.equal(weeklyAverages(pts, 2).length, 2);
   }
+  {
+    const { weightAxis } = await import("../src/lib/progress-math.ts");
+    for (const vals of [[96.7, 96.8], [96.8, 96.8], [80, 80.4, 81.2], [84.6, 83.1, 81.5], [70, 78], [100.2, 97.5], [180, 182], [55.3]]) {
+      const a = weightAxis(vals);
+      const span = a.hi - a.lo;
+      assert.ok(span >= 2 - 1e-9, `at least 2 tall for ${vals}`);
+      assert.ok(a.ticks.length >= 3 && a.ticks.length <= 5, `3 to 5 lines for ${vals}: ${a.ticks}`);
+      assert.equal(new Set(a.ticks.map((v) => v.toFixed(1))).size, a.ticks.length, `distinct labels for ${vals}`);
+      assert.ok(Math.min(...vals) > a.lo && Math.max(...vals) < a.hi, `points inside for ${vals}`);
+    }
+    console.log(JSON.stringify(weightAxis([96.7, 96.8])));
+  }
   console.log("progress-math.ts: all checks passed");
 }
 

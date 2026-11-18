@@ -15,9 +15,15 @@ export async function setPassword(formData: FormData) {
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.updateUser({ password });
+  // The flag lets the app know this person can log in with a password from now on.
+  const { error } = await supabase.auth.updateUser({ password, data: { password_set: true } });
   if (error) {
-    redirect("/account?error=" + encodeURIComponent("Could not save the password. Try again."));
+    const msg = /session|jwt|not authenticated|missing/i.test(error.message)
+      ? "Your login link has run out. Go to the login page, tap 'Email me a login link' and set the password from that email."
+      : /different|same/i.test(error.message)
+        ? "That is already your password. You can log in with it."
+        : `Could not save the password: ${error.message}`;
+    redirect("/account?error=" + encodeURIComponent(msg));
   }
 
   redirect("/account?saved=1");

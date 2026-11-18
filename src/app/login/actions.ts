@@ -3,6 +3,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { siteOrigin } from "@/lib/site";
 
 function back(kind: "error" | "sent", message: string): never {
   redirect(`/login?${kind}=${encodeURIComponent(message)}`);
@@ -29,7 +30,7 @@ export async function sendLoginLink(formData: FormData) {
   // shouldCreateUser: false means only people the coach invited can get a link.
   await supabase.auth.signInWithOtp({
     email,
-    options: { shouldCreateUser: false, emailRedirectTo: `${origin}/auth/confirm` },
+    options: { shouldCreateUser: false, emailRedirectTo: `${siteOrigin(origin)}/auth/confirm` },
   });
 
   // Same message whether or not the address exists, so nobody can test who has an account.

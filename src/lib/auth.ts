@@ -9,6 +9,8 @@ export type CurrentUser = {
   email: string;
   role: Role;
   fullName: string;
+  /** False until they chose a password; people who only used email links have none. */
+  passwordSet: boolean;
 };
 
 /** The logged-in user with their role, or a redirect to the login page. */
@@ -30,6 +32,7 @@ export const requireUser = cache(async function requireUser(): Promise<CurrentUs
     email: user.email ?? "",
     role: profile?.role === "coach" ? "coach" : "athlete",
     fullName: profile?.full_name ?? "",
+    passwordSet: user.user_metadata?.password_set === true,
   };
 });
 

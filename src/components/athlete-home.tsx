@@ -22,7 +22,7 @@ export function today() {
 }
 
 /** The athlete's Today screen. Also used for a coach who has their own athlete profile. */
-export async function AthleteHome({ firstName, welcome = false, isCoach = false, done }: { firstName: string; welcome?: boolean; isCoach?: boolean; done?: string }) {
+export async function AthleteHome({ firstName, welcome = false, isCoach = false, done, needsPassword = false }: { firstName: string; welcome?: boolean; isCoach?: boolean; done?: string; needsPassword?: boolean }) {
   const supabase = await createClient();
   const athlete = await getMyAthlete();
   const name = firstName || athlete?.full_name?.split(" ")[0] || "";
@@ -179,6 +179,15 @@ export async function AthleteHome({ firstName, welcome = false, isCoach = false,
     <div className="space-y-6">
       {heading}
       <WorkoutSaved logId={done} />
+      {needsPassword && (
+        <Link href="/account" className="flex items-center justify-between rounded-2xl border border-accent bg-accent/10 px-4 py-3">
+          <span>
+            <span className="block font-semibold">Choose a password</span>
+            <span className="block text-sm text-muted">So you can log in without waiting for an email next time</span>
+          </span>
+          <span className="text-accent">→</span>
+        </Link>
+      )}
       {welcome && (
         <Card>
           <h2 className="font-semibold">You&apos;re in. One last tip:</h2>

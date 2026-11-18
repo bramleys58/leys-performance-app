@@ -51,7 +51,10 @@ export default function AuthCallbackPage() {
       {failed ? (
         <>
           <h1 className="mt-3 text-2xl font-bold">This link no longer works</h1>
-          <p className="mt-2 text-sm text-muted">It may have expired or been used already.</p>
+          <p className="mt-2 text-sm text-muted">
+            Links expire after a while, and each new invite email replaces the link in the one before. If you have more than one email, open the newest.
+          </p>
+          <p className="mt-2 text-sm text-muted">Or get a fresh link yourself: on the login page, fill in your email and tap &lsquo;Email me a login link&rsquo;. You can set your password after that.</p>
           <a href="/login" className="mt-6 rounded-xl bg-accent px-4 py-3 font-semibold text-accent-text">
             Go to login
           </a>

@@ -19,7 +19,7 @@ export default async function AccountPage({ searchParams }: PageProps<"/account"
     <div className="space-y-5">
       <h1 className="text-2xl font-bold">Account</h1>
 
-      {params.welcome && <Notice kind="ok">Welcome. Choose a password so you can log in next time.</Notice>}
+      {(params.welcome || !user.passwordSet) && !params.saved && <Notice kind="ok">Welcome. Choose a password so you can log in next time.</Notice>}
       {params.saved && <Notice kind="ok">{params.saved === "unit" ? "Unit saved." : "Password saved."}</Notice>}
 
       <Card>

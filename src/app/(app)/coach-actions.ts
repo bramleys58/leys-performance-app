@@ -1,5 +1,6 @@
 "use server";
 
+import { siteOrigin } from "@/lib/site";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { storeKg } from "@/lib/units";
 import { MAX_RESOURCE_BYTES, RESOURCE_BUCKET, adminClient } from "@/lib/supabase/admin";
@@ -621,7 +622,7 @@ export async function inviteAthlete(athleteId: string) {
     if (existing.user?.email_confirmed_at || existing.user?.last_sign_in_at) go(back + "?error=" + encodeURIComponent("This athlete already has a login. If they forgot the password, they can reset it on the login page."));
   }
   const { error } = await admin.auth.admin.inviteUserByEmail(athlete.email, {
-    redirectTo: origin ? `${origin}/auth/callback` : undefined,
+    redirectTo: siteOrigin(origin) ? `${siteOrigin(origin)}/auth/callback` : undefined,
     data: { full_name: athlete.full_name },
   });
   if (error) {

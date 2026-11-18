@@ -12,6 +12,7 @@ export async function GET(request: NextRequest) {
 
   const supabase = await createClient();
   let ok = false;
+  let hasPassword = true;
 
   if (tokenHash && type) {
     const { error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash });
@@ -22,11 +23,13 @@ export async function GET(request: NextRequest) {
   }
 
   if (!ok) {
-    const message = encodeURIComponent("That link is no longer valid. Ask for a new one below.");
+    const message = encodeURIComponent("That link no longer works. Each new email replaces the previous link, so use the newest one, or fill in your email below and tap 'Email me a login link'.");
     return NextResponse.redirect(`${origin}/login?error=${message}`);
   }
+  const { data } = await supabase.auth.getUser();
+  hasPassword = data.user?.user_metadata?.password_set === true;
 
-  // New and recovering users choose a password first.
-  const needsPassword = type === "invite" || type === "recovery";
+  // New and recovering users, and anyone without a password yet, choose one first.
+  const needsPassword = type === "invite" || type === "recovery" || !hasPassword;
   return NextResponse.redirect(`${origin}${needsPassword ? "/account?welcome=1" : "/"}`);
 }

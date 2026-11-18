@@ -54,6 +54,19 @@ export default async function AccountPage({ searchParams }: PageProps<"/account"
         </Card>
       )}
 
+      {user.role === "coach" && (
+        <Card>
+          <h2 className="font-semibold">Backup</h2>
+          <p className="mt-1 text-sm text-muted">
+            Downloads everything in the app as one Excel file: athletes, programs, every logged set, check-ins, bodyweights, maxes, tests and packages. Worth doing once a week while the app runs on the free plan, which keeps no backups.
+          </p>
+          {/* A plain link: the browser downloads the file. */}
+          <a href="/account/export" download className="mt-3 inline-block rounded-xl border border-border bg-surface-2 px-4 py-2.5 text-sm font-medium">
+            Download backup (.xlsx)
+          </a>
+        </Card>
+      )}
+
       <Card>
         <h2 className="font-semibold">Privacy</h2>
         {athlete?.privacy_accepted_at && <p className="mt-1 text-sm text-muted">You agreed to the privacy notice on {when(athlete.privacy_accepted_at)}.</p>}

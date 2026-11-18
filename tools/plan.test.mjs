@@ -177,3 +177,38 @@ console.log("weekly.ts: all checks passed");
   assert.deepEqual(weeksOnTarget([], 3, "2026-11-16", "2026-11-17"), { hit: 0, of: 0 }); // brand new this week
   console.log("habits.ts: all checks passed");
 }
+
+{
+  const { blockEnd, blocksToWrite } = await import("../src/lib/blocks.ts");
+  // Starts Wed 4 Nov 2026 (week of Mon 2 Nov), 4 weeks -> ends Sun 29 Nov.
+  assert.equal(blockEnd("2026-11-04", 4), "2026-11-29");
+  assert.equal(blockEnd("2026-11-02", 1), "2026-11-08");
+  const A = [
+    { id: "a", full_name: "Ann" }, // ends in 5 days
+    { id: "b", full_name: "Bob" }, // ends in 5 days, next block drafted
+    { id: "c", full_name: "Cas" }, // no program
+    { id: "d", full_name: "Dre" }, // ended Sunday, 2 days ago
+    { id: "e", full_name: "Eva" }, // ends in 3 weeks
+    { id: "f", full_name: "Fay" }, // block without week numbers: repeats, never ends
+    { id: "g", full_name: "Gus" }, // only a draft
+    { id: "h", full_name: "Hal" }, // ended 2 months ago: dropped
+  ];
+  const P = (id, athlete_id, status, start_date, weeks, created_at = "2026-10-01T00:00:00Z") => ({ id, athlete_id, name: id, status, start_date, created_at, weeks });
+  const today = "2026-11-24"; // Tue
+  const list = blocksToWrite(
+    A,
+    [
+      P("a1", "a", "active", "2026-11-02", 4),
+      P("b1", "b", "active", "2026-11-02", 4),
+      P("b2", "b", "draft", "2026-11-30", 4),
+      P("d1", "d", "active", "2026-10-26", 4),
+      P("e1", "e", "active", "2026-11-23", 3),
+      P("f1", "f", "active", "2026-11-02", 0),
+      P("g1", "g", "draft", null, 4),
+      P("h1", "h", "active", "2026-08-03", 4),
+    ],
+    today,
+  );
+  assert.deepEqual(list.map((x) => `${x.athlete}:${x.kind}:${x.daysLeft}`), ["Cas:none:null", "Gus:draft:null", "Dre:ended:-2", "Ann:ending:5"]);
+  console.log("blocks.ts: all checks passed");
+}

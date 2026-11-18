@@ -6,6 +6,7 @@ import { requireUser } from "@/lib/auth";
 import { type ClientPackage, packageState } from "@/lib/business";
 import { getWorkoutsToReview } from "@/lib/review";
 import { getVideoTodo } from "@/lib/video-todo";
+import { blocksToWrite, type BlockProgram } from "@/lib/blocks";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function HomePage({ searchParams }: PageProps<"/">) {
@@ -35,7 +36,21 @@ async function CoachHome({ firstName, userId }: { firstName: string; userId: str
   ]);
   // Packages that need a look: unpaid, almost used up, ending soon.
   const openPkgs = (pkgs.data ?? []) as ClientPackage[];
-  const [toReview, videoTodo] = await Promise.all([getWorkoutsToReview(userId), getVideoTodo(supabase)]);
+  const [toReview, videoTodo, coached, blockPrograms] = await Promise.all([
+    getWorkoutsToReview(userId),
+    getVideoTodo(supabase),
+    // Athletes you write programs for: active, not logging-only.
+    supabase.from("athletes").select("id, full_name, user_id").eq("status", "active").eq("tracking_only", false),
+    supabase.from("programs").select("id, athlete_id, name, status, start_date, created_at, sessions(week)").eq("is_template", false).in("status", ["active", "draft"]),
+  ]);
+  const toWrite = blocksToWrite(
+    (coached.data ?? []).filter((a) => a.user_id !== userId), // not your own training
+    ((blockPrograms.data ?? []) as { id: string; athlete_id: string; name: string; status: string; start_date: string | null; created_at: string; sessions: { week: number | null }[] }[]).map(
+      (p): BlockProgram => ({ ...p, weeks: Math.max(0, ...p.sessions.map((s) => s.week ?? 0)) }),
+    ),
+    day,
+  );
+  const shortDay = (d: string) => new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(d + "T12:00:00Z"));
   let business = 0;
   if (openPkgs.length > 0) {
     const ids = [...new Set(openPkgs.map((p) => p.athlete_id))];
@@ -123,6 +138,37 @@ async function CoachHome({ firstName, userId }: { firstName: string; userId: str
           </span>
           <span className="text-muted">→</span>
         </Link>
+      )}
+      {toWrite.length > 0 && (
+        <Card>
+          <div className="flex items-baseline justify-between gap-3">
+            <h2 className="font-semibold">Blocks to write</h2>
+            <p className="text-sm text-muted">ending within 7 days</p>
+          </div>
+          <ul className="mt-2 divide-y divide-border">
+            {toWrite.map((b) => (
+              <li key={b.athleteId}>
+                <Link href={`/athletes/${b.athleteId}`} className="flex items-center justify-between gap-3 py-2.5 text-sm">
+                  <span className="min-w-0 truncate">
+                    <span className="font-medium">{b.athlete}</span>
+                    {b.program && <span className="ml-2 text-muted">{b.program}</span>}
+                  </span>
+                  <span className={`shrink-0 ${b.kind === "ending" && (b.daysLeft ?? 0) > 2 ? "text-muted" : "text-accent"}`}>
+                    {b.kind === "none"
+                      ? "no program"
+                      : b.kind === "draft"
+                        ? "draft, not published"
+                        : b.kind === "ended"
+                          ? `ended ${-(b.daysLeft as number)} day${b.daysLeft === -1 ? "" : "s"} ago`
+                          : b.daysLeft === 0
+                            ? "ends today"
+                            : `ends ${shortDay(b.end as string)}`}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Card>
       )}
       <Card>
         <div className="flex items-baseline justify-between gap-3">

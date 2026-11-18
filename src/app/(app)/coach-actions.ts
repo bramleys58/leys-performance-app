@@ -612,10 +612,14 @@ export async function inviteAthlete(athleteId: string) {
 
   const { data: athlete } = await db.from("athletes").select("email, full_name, user_id").eq("id", athleteId).maybeSingle();
   if (!athlete?.email) go(back + "?error=" + encodeURIComponent("Add an email address to the profile first."));
-  if (athlete.user_id) go(back + "?error=" + encodeURIComponent("This athlete already has a login."));
-
   const origin = (await headers()).get("origin") ?? "";
   const admin = createAdminClient(url, secret, { auth: { persistSession: false, autoRefreshToken: false } });
+  // Invited before but never opened the link: sending the invite again gives a fresh link.
+  // Once they have logged in, they use "Forgot password" on the login page instead.
+  if (athlete.user_id) {
+    const { data: existing } = await admin.auth.admin.getUserById(athlete.user_id);
+    if (existing.user?.email_confirmed_at || existing.user?.last_sign_in_at) go(back + "?error=" + encodeURIComponent("This athlete already has a login. If they forgot the password, they can reset it on the login page."));
+  }
   const { error } = await admin.auth.admin.inviteUserByEmail(athlete.email, {
     redirectTo: origin ? `${origin}/auth/callback` : undefined,
     data: { full_name: athlete.full_name },

@@ -8,6 +8,7 @@ import { HABIT_SUGGESTIONS, weekDays, weeksOnTarget } from "@/lib/habits";
 import { todayISO, weekFilter } from "@/lib/plan";
 import type { WeeklyCheckIn } from "@/lib/weekly";
 import { createClient } from "@/lib/supabase/server";
+import { adminClient } from "@/lib/supabase/admin";
 import { addHabit, addSuggestedHabit, copyProgram, createProgram, inviteAthlete, stopHabit, updateAthlete } from "../../coach-actions";
 import { startFreeWorkout } from "../../athlete-actions";
 
@@ -26,6 +27,13 @@ export default async function AthletePage({ params, searchParams }: PageProps<"/
     supabase.from("habit_logs").select("habit_id, day").eq("athlete_id", id).gte("day", habitSince),
   ]);
   if (!athlete) notFound();
+  // Invited but never logged in: the invite can be sent again.
+  let waitingForLogin = false;
+  if (athlete.user_id) {
+    const admin = adminClient();
+    const { data: auth } = admin ? await admin.auth.admin.getUserById(athlete.user_id) : { data: { user: null } };
+    waitingForLogin = !!auth.user && !auth.user.email_confirmed_at && !auth.user.last_sign_in_at;
+  }
 
   const activeIds = (programs ?? []).filter((p) => p.status === "active").map((p) => p.id);
   const [{ data: liveSessions }, { data: recentLogs }, { data: weeklies }] = await Promise.all([
@@ -291,10 +299,11 @@ export default async function AthletePage({ params, searchParams }: PageProps<"/
           </p>
           <SecondaryButton type="submit">Save profile</SecondaryButton>
         </form>
-        {!athlete.user_id && athlete.email && (
+        {athlete.email && (!athlete.user_id || waitingForLogin) && (
           <form action={inviteAthlete.bind(null, athlete.id)} className="mt-3">
+            {waitingForLogin && <p className="mb-2 text-sm text-muted">Invited, but no login made yet. Invite links expire, so send a fresh one if the first did not work.</p>}
             <ActionButton pendingLabel="Sending…" className="w-full rounded-xl border border-accent/60 px-4 py-3 text-base font-medium text-accent">
-              Email an invite to {athlete.email}
+              {waitingForLogin ? `Resend the invite to ${athlete.email}` : `Email an invite to ${athlete.email}`}
             </ActionButton>
           </form>
         )}

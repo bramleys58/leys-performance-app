@@ -1,5 +1,6 @@
 "use server";
 
+import { nextInQueue } from "@/lib/review-queue";
 import { siteOrigin } from "@/lib/site";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { storeKg } from "@/lib/units";
@@ -497,6 +498,7 @@ export async function updateExercise(fd: FormData) {
     const msg = error.code === "23505" ? "Another exercise already has that name. Merge them instead." : "Could not save the exercise.";
     go(back + "?error=" + encodeURIComponent(msg));
   }
+  if (fd.get("queue") === "1") go(await nextInQueue(db, id, name));
   go(back + "?saved=1");
 }
 
@@ -506,12 +508,15 @@ export async function mergeExercise(fromId: string, fd: FormData) {
   if (!into || into === fromId) go(`/library/${fromId}?error=` + encodeURIComponent("Pick the exercise to keep from the list."));
   const { error } = await db.rpc("merge_exercise", { p_from: fromId, p_into: into });
   if (error) go(`/library/${fromId}?error=` + encodeURIComponent("Could not merge the exercises."));
+  if (fd.get("queue") === "1") go(await nextInQueue(db, fromId, text(fd, "from_name") ?? ""));
   go(`/library/${into}?merged=1`);
 }
 
-export async function archiveExercise(id: string, archived: boolean) {
+export async function archiveExercise(id: string, archived: boolean, queue = false) {
   const db = await coachDb();
+  const { data: ex } = await db.from("exercises").select("name").eq("id", id).maybeSingle();
   await db.from("exercises").update({ archived, needs_review: false, approved: true }).eq("id", id);
+  if (queue && archived) go(await nextInQueue(db, id, ex?.name ?? ""));
   go(archived ? "/library?archived=1" : `/library/${id}`);
 }
 

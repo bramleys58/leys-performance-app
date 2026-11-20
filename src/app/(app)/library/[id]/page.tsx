@@ -3,6 +3,8 @@ import { ExercisePicker } from "@/components/exercise-picker";
 import { ActionButton, BackLink, Card, Field, Notice, PrimaryButton, SecondaryButton, Select, inputClass } from "@/components/ui";
 import { requireCoach } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { reviewQueue } from "@/lib/review-queue";
+import Link from "next/link";
 import { addAlternative, archiveExercise, mergeExercise, removeAlternative, updateExercise } from "../../coach-actions";
 
 const TRACKING = [
@@ -40,9 +42,27 @@ export default async function ExercisePage({ params, searchParams }: PageProps<"
 
   const patterns = [...new Set((patternRows ?? []).map((r) => r.movement_pattern as string))].sort();
 
+  // Opened from the "to check" list: save, merge or archive moves on to the next one.
+  const inQueue = sp.queue === "1";
+  const queue = inQueue ? await reviewQueue(supabase) : [];
+  const others = queue.filter((q) => q.id !== e.id);
+  const skipTo = others.find((q) => q.name.localeCompare(e.name) > 0) ?? others[0];
+
   return (
     <div className="space-y-5">
-      <BackLink href="/library">Exercise library</BackLink>
+      <BackLink href={inQueue ? "/library?review=check" : "/library"}>{inQueue ? "To check" : "Exercise library"}</BackLink>
+      {inQueue && (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface px-4 py-2.5 text-sm">
+          <span className="text-muted">
+            {queue.length} left to check{sp.saved ? " · previous one done" : ""}
+          </span>
+          {skipTo && (
+            <Link href={`/library/${skipTo.id}?queue=1`} className="font-medium text-accent">
+              Skip →
+            </Link>
+          )}
+        </div>
+      )}
       <div>
         <h1 className="text-2xl font-bold">{e.name}</h1>
         <p className="mt-1 text-sm text-muted">
@@ -51,7 +71,7 @@ export default async function ExercisePage({ params, searchParams }: PageProps<"
         </p>
       </div>
 
-      {sp.saved && <Notice kind="ok">Saved.</Notice>}
+      {sp.saved && !inQueue && <Notice kind="ok">Saved.</Notice>}
       {sp.merged && <Notice kind="ok">Merged. Everything logged with the duplicate now counts for this exercise.</Notice>}
       {typeof sp.error === "string" && <Notice kind="error">{sp.error}</Notice>}
       {!e.approved && (
@@ -68,6 +88,7 @@ export default async function ExercisePage({ params, searchParams }: PageProps<"
       <Card>
         <form action={updateExercise} className="space-y-4">
           <input type="hidden" name="id" value={e.id} />
+          {inQueue && <input type="hidden" name="queue" value="1" />}
           <Field label="Name" name="name" defaultValue={e.name} required />
           <label className="block">
             <span className="mb-1.5 block text-sm text-muted">Other names (one per line, search finds these too)</span>
@@ -117,7 +138,7 @@ export default async function ExercisePage({ params, searchParams }: PageProps<"
             <input type="checkbox" name="keep_review" /> Keep it marked for review
           </label>
           <PrimaryButton type="submit" pendingLabel="Saving…">
-            {e.approved ? "Save" : "Approve and save"}
+            {e.approved ? (inQueue ? "Save and next" : "Save") : inQueue ? "Approve and next" : "Approve and save"}
           </PrimaryButton>
         </form>
       </Card>
@@ -153,6 +174,8 @@ export default async function ExercisePage({ params, searchParams }: PageProps<"
           Merging moves every logged set, program row and max to the exercise you pick, keeps &ldquo;{e.name}&rdquo; as an extra name there, and removes this one.
         </p>
         <form action={mergeExercise.bind(null, e.id)} className="mt-3 space-y-3">
+          {inQueue && <input type="hidden" name="queue" value="1" />}
+          <input type="hidden" name="from_name" value={e.name} />
           <ExercisePicker />
           <label className="flex items-center gap-2 text-sm text-muted">
             <input type="checkbox" required /> Yes, merge and remove this exercise
@@ -163,7 +186,7 @@ export default async function ExercisePage({ params, searchParams }: PageProps<"
         </form>
       </Card>
 
-      <form action={archiveExercise.bind(null, e.id, !e.archived)}>
+      <form action={archiveExercise.bind(null, e.id, !e.archived, inQueue)}>
         <ActionButton className="w-full rounded-xl border border-border px-4 py-3 text-sm text-muted">
           {e.archived ? "Bring back into the library" : "Archive (hide from search, keep history)"}
         </ActionButton>

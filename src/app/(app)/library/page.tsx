@@ -80,6 +80,7 @@ export default async function LibraryPage({ searchParams }: PageProps<"/library"
   return (
     <div className="space-y-5">
       {one(params.archived) === "1" && <p className="text-sm text-ok">Exercise archived.</p>}
+      {one(params.queue_done) === "1" && <p className="text-sm text-ok">All checked. Nothing left to review.</p>}
       <div className="flex items-end justify-between">
         <h1 className="text-2xl font-bold">Exercise library</h1>
         <p className="text-sm text-muted tabular-nums">{total} exercises</p>
@@ -142,7 +143,7 @@ export default async function LibraryPage({ searchParams }: PageProps<"/library"
         {(exercises ?? []).map((e) => (
           <li key={e.id} className="flex items-center gap-3 px-4 py-3">
             <div className="min-w-0 flex-1">
-              <Link href={`/library/${e.id}`} className="block truncate font-medium hover:underline">
+              <Link href={`/library/${e.id}${review === "check" || pending ? "?queue=1" : ""}`} className="block truncate font-medium hover:underline">
                 {e.name}
                 {!e.approved ? (
                   <span className="ml-2 align-middle text-xs text-accent">approve</span>

@@ -265,6 +265,8 @@ export async function updateSession(fd: FormData) {
   const db = await coachDb();
   const id = String(fd.get("id"));
   const programId = String(fd.get("program_id"));
+  // Edits typed in the exercise list come along; save them too.
+  if (fd.has("row_ids")) await persistRows(db, fd, id);
   const kind = text(fd, "kind");
   const weekday = int(fd, "weekday");
   await db
@@ -300,6 +302,8 @@ export async function addRow(fd: FormData) {
   const section = text(fd, "section") === "prep" ? "prep" : "workout";
   const name = text(fd, "display_name");
   const back = `/programs/${programId}/sessions/${sessionId}`;
+  // Edits typed in the exercise list come along; save them first.
+  if (fd.has("row_ids")) await persistRows(db, fd, sessionId);
   if (!name) go(back);
 
   let exerciseId = text(fd, "exercise_id");
@@ -343,7 +347,7 @@ export async function addRow(fd: FormData) {
     superset_group: text(fd, "superset_group")?.toUpperCase().slice(0, 2) ?? null,
     position: (last?.[0]?.position ?? -1) + 1,
     sets: int(fd, "sets") ?? defaults?.default_sets ?? (section === "prep" ? 1 : 3),
-    reps: text(fd, "reps") ?? defaults?.default_reps ?? null,
+    reps: repsWithUnit(text(fd, "reps"), text(fd, "reps_unit")) ?? defaults?.default_reps ?? null,
     tempo: text(fd, "tempo") ?? defaults?.default_tempo ?? null,
     coaching_note: text(fd, "coaching_note") ?? defaults?.default_note ?? null,
   });
@@ -351,6 +355,18 @@ export async function addRow(fd: FormData) {
 }
 
 type Db = Awaited<ReturnType<typeof createClient>>;
+
+/**
+ * Reps or seconds: "30" with Sec becomes "30s" (the athlete then logs seconds), and a time
+ * like "30s" with Reps becomes "30". Without a choice the text is kept as typed.
+ */
+function repsWithUnit(raw: string | null, unit: string | null): string | null {
+  if (!raw || !unit) return raw;
+  const timed = /\d\s*(s|sec|secs|seconds|min)\b/i.test(raw);
+  if (unit === "sec" && !timed) return raw.replace(/^(\s*\d+(?:[.,]\d+)?(?:\s*[-–]\s*\d+(?:[.,]\d+)?)?)/, "$1s");
+  if (unit === "reps" && timed) return raw.replace(/(\d)\s*(s|sec|secs|seconds)\b/gi, "$1");
+  return raw;
+}
 
 /** Writes every row of the session form. Inputs are named field__rowId. */
 async function persistRows(db: Db, fd: FormData, sessionId: string) {
@@ -365,7 +381,7 @@ async function persistRows(db: Db, fd: FormData, sessionId: string) {
           display_name: text(fd, f("display_name")) ?? "Exercise",
           superset_group: text(fd, f("superset_group"))?.toUpperCase().slice(0, 2) ?? null,
           sets: int(fd, f("sets")),
-          reps: text(fd, f("reps")),
+          reps: repsWithUnit(text(fd, f("reps")), text(fd, f("reps_unit"))),
           tempo: text(fd, f("tempo")),
           target_type: targetType === "weight" || targetType === "percent" || targetType === "rpe" ? targetType : "none",
           target_value: num(fd, f("target_value")),

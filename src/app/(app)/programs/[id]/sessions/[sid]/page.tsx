@@ -3,9 +3,10 @@ import { ExercisePicker } from "@/components/exercise-picker";
 import { TargetFields } from "@/components/target-fields";
 import { ActionButton, BackLink, Card, Field, Notice, PrimaryButton, SecondaryButton, Select, inputClass } from "@/components/ui";
 import { requireCoach } from "@/lib/auth";
-import { SUPERSET_COLORS, WEEKDAYS, sortRows, supersetLabels, weekNumbers, type PlanRow } from "@/lib/plan";
+import { SUPERSET_COLORS, WEEKDAYS, looksLikeTime, sortRows, supersetLabels, weekNumbers, type PlanRow } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/server";
 import { addRow, deleteSession, rowOp, saveRows, updateSession } from "../../../../coach-actions";
+import { CarryRows } from "@/components/carry-rows";
 
 const small = inputClass + " px-2 py-2 text-sm";
 
@@ -33,12 +34,16 @@ export default async function SessionEditorPage({ params, searchParams }: PagePr
   const [{ data: liftData }, { data: maxData }, { data: stepData }, { data: weekData }] = await Promise.all([
     supabase.from("exercises").select("id, name").eq("counts_for_maxes", true).eq("archived", false).order("name"),
     athleteId ? supabase.from("maxes").select("exercise_id, value").eq("athlete_id", athleteId).eq("is_active", true) : Promise.resolve({ data: null }),
-    rowExerciseIds.length ? supabase.from("exercises").select("id, weight_step").in("id", rowExerciseIds) : Promise.resolve({ data: [] }),
+    rowExerciseIds.length ? supabase.from("exercises").select("id, weight_step, tracking_type").in("id", rowExerciseIds) : Promise.resolve({ data: [] }),
     supabase.from("sessions").select("week").eq("program_id", programId),
   ]);
   const lifts = (liftData ?? []) as { id: string; name: string }[];
   const maxes = maxData ? Object.fromEntries((maxData as { exercise_id: string; value: number }[]).map((m) => [m.exercise_id, Number(m.value)])) : null;
   const stepOf = new Map(((stepData ?? []) as { id: string; weight_step: number }[]).map((e) => [e.id, Number(e.weight_step)]));
+  const trackingOf = new Map(((stepData ?? []) as { id: string; tracking_type: string }[]).map((e) => [e.id, e.tracking_type]));
+  // Shown as Sec when the row has a time ("30s") or the exercise is a time exercise.
+  const isTimed = (r: { reps: string | null; exercise_id: string | null }) => looksLikeTime(r.reps) || (!r.reps && trackingOf.get(r.exercise_id ?? "") === "time");
+  const repsShown = (reps: string | null) => (reps ?? "").replace(/(\d)\s*(s|sec|secs|seconds)\b/gi, "$1");
   const weeks = weekNumbers((weekData ?? []) as { week: number | null }[]);
   const isSlot = session.kind === "slot";
   const rowsKey = rows
@@ -74,10 +79,13 @@ export default async function SessionEditorPage({ params, searchParams }: PagePr
                   Sets
                   <input name={`sets__${r.id}`} defaultValue={r.sets ?? ""} inputMode="numeric" className={small} />
                 </label>
-                <label className="text-xs text-muted">
-                  Reps
-                  <input name={`reps__${r.id}`} defaultValue={r.reps ?? ""} placeholder="8 ea" className={small} />
-                </label>
+                <div className="text-xs text-muted">
+                  <select name={`reps_unit__${r.id}`} defaultValue={isTimed(r) ? "sec" : "reps"} aria-label="Reps or seconds" className="-ml-0.5 bg-transparent text-xs text-muted">
+                    <option value="reps">Reps</option>
+                    <option value="sec">Sec</option>
+                  </select>
+                  <input name={`reps__${r.id}`} defaultValue={isTimed(r) ? repsShown(r.reps) : (r.reps ?? "")} placeholder="8 ea" aria-label="Reps or seconds" className={small} />
+                </div>
                 <label className="text-xs text-muted">
                   Tempo
                   <input name={`tempo__${r.id}`} defaultValue={r.tempo ?? ""} className={small} />
@@ -119,11 +127,18 @@ export default async function SessionEditorPage({ params, searchParams }: PagePr
         <input type="hidden" name="session_id" value={sid} />
         <input type="hidden" name="program_id" value={programId} />
         <input type="hidden" name="section" value={key} />
+        <CarryRows />
         <ExercisePicker />
         <div className="grid grid-cols-4 gap-2">
           <input name="superset_group" placeholder="A" maxLength={2} aria-label="Superset letter" className={small} />
           <input name="sets" placeholder="Sets" inputMode="numeric" aria-label="Sets" className={small} />
-          <input name="reps" placeholder="Reps" aria-label="Reps" className={small} />
+          <div className="flex">
+            <input name="reps" placeholder="Reps" aria-label="Reps or seconds" className={small + " rounded-r-none"} />
+            <select name="reps_unit" aria-label="Reps or seconds" defaultValue="reps" className="rounded-r-lg border border-l-0 border-border bg-surface-2 px-1 text-xs text-muted">
+              <option value="reps">reps</option>
+              <option value="sec">sec</option>
+            </select>
+          </div>
           <input name="tempo" placeholder="Tempo" aria-label="Tempo" className={small} />
         </div>
         <p className="text-xs text-muted">Leave sets, reps and tempo empty to use the defaults from the library.</p>
@@ -165,6 +180,7 @@ export default async function SessionEditorPage({ params, searchParams }: PagePr
       <Card>
         <h2 className="font-semibold">Session details</h2>
         <form action={updateSession} className="mt-4 space-y-4">
+          <CarryRows />
           <input type="hidden" name="id" value={sid} />
           <input type="hidden" name="program_id" value={programId} />
           <Field label="Name" name="name" defaultValue={session.name} required />

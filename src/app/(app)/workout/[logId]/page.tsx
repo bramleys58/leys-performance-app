@@ -37,7 +37,7 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
     supabase.from("set_logs").select("*").eq("workout_log_id", logId),
     supabase
       .from("workout_exercises")
-      .select("id, exercise_id, display_name, position, superset_group, planned_sets, exercises(tracking_type, weight_step, video_url, equipment, log_fields, best, distance_unit)")
+      .select("*, exercises(tracking_type, weight_step, video_url, equipment, log_fields, best, distance_unit)")
       .eq("workout_log_id", logId)
       .order("position"),
   ]);

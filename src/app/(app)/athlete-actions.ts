@@ -258,7 +258,7 @@ export async function repeatWorkout(fromLogId: string) {
     .insert({ athlete_id: from.athlete_id, session_id: null, session_name: from.session_name ?? "Workout", performed_on: todayISO(), started_at: new Date().toISOString(), logged_by: user.id, repeat_of: from.id })
     .select("id")
     .single();
-  if (error || !log) redirect(back + "?error=" + encodeURIComponent("Could not start the workout."));
+  if (error || !log) redirect(back + "?error=" + encodeURIComponent("Could not start the workout. If this keeps happening, the database still needs its last update."));
   const { error: rowsError } = await supabase.from("workout_exercises").insert(
     list.map((r, i) => ({
       workout_log_id: log.id,

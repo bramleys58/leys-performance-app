@@ -2,9 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ActionButton, BackLink, Card, Field, Notice, SecondaryButton, Select, inputClass } from "@/components/ui";
 import { requireCoach } from "@/lib/auth";
-import { WEEKDAYS, programWeek, todayISO, weekNumbers } from "@/lib/plan";
+import { WEEKDAYS, programWeek, todayISO, weekNumbers, weekRange } from "@/lib/plan";
+import { CopyToDays } from "@/components/copy-to-days";
 import { createClient } from "@/lib/supabase/server";
-import { copyProgram, copyWeek, createSession, deleteProgram, deleteWeek, duplicateSession, updateProgram } from "../../coach-actions";
+import { copyProgram, copySessionToDays, copyWeek, createSession, deleteProgram, deleteWeek, updateProgram } from "../../coach-actions";
 
 const small = inputClass + " px-2 py-2 text-sm";
 
@@ -44,6 +45,15 @@ export default async function ProgramPage({ params, searchParams }: PageProps<"/
     const have = new Set((maxes ?? []).map((m) => m.exercise_id));
     missingMax = (names ?? []).filter((n) => !have.has(n.id)).map((n) => n.name);
   }
+
+  // For the copy calendar: which days already have a session ("week-weekday", week 0 = every week).
+  const taken: Record<string, string[]> = {};
+  for (const s of sessions) {
+    if (!s.weekday) continue;
+    const ws = multiWeek ? (s.week == null ? weeks : [s.week]) : [0];
+    for (const w of ws) (taken[`${w}-${s.weekday}`] ??= []).push(s.name);
+  }
+  const startMonday = !isTemplate && program.start_date ? weekRange(program.start_date).monday : null;
 
   const groups: { key: string; week: number | null; title: string; list: S[] }[] = multiWeek
     ? [
@@ -110,7 +120,7 @@ export default async function ProgramPage({ params, searchParams }: PageProps<"/
               {g.list.map((s) => {
                 const count = s.session_exercises?.[0]?.count ?? 0;
                 return (
-                  <li key={s.id} className="flex items-center gap-2">
+                  <li key={s.id} className="flex flex-wrap items-center gap-2 pb-1">
                     <Link href={`/programs/${id}/sessions/${s.id}`} className="flex min-w-0 flex-1 items-center justify-between gap-2 py-2.5">
                       <span className="min-w-0">
                         <span className="font-medium">{s.name}</span>
@@ -120,11 +130,14 @@ export default async function ProgramPage({ params, searchParams }: PageProps<"/
                       </span>
                       <span className="shrink-0 text-xs text-muted">{count} exercises</span>
                     </Link>
-                    <form action={duplicateSession.bind(null, id, s.id)}>
-                      <ActionButton aria-label={`Copy ${s.name}`} title="Copy this session" className="rounded-lg border border-border px-2.5 py-1.5 text-xs text-muted">
-                        Copy
-                      </ActionButton>
-                    </form>
+                    <CopyToDays
+                      name={s.name}
+                      weeks={multiWeek ? weeks : [null]}
+                      newWeek={multiWeek ? lastWeek + 1 : null}
+                      startMonday={startMonday}
+                      taken={taken}
+                      action={copySessionToDays.bind(null, id, s.id)}
+                    />
                   </li>
                 );
               })}

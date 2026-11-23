@@ -236,6 +236,35 @@ export async function duplicateSession(programId: string, sessionId: string, fd:
   go(`/programs/${programId}` + (error ? "?error=" + encodeURIComponent("Could not copy the session.") : "?saved=1"));
 }
 
+/**
+ * Copies one session to the days picked in the calendar. Each slot is "week-weekday"
+ * (week 0 for a block without week numbers); every copy gets that week and weekday.
+ */
+export async function copySessionToDays(programId: string, sessionId: string, fd: FormData) {
+  const db = await coachDb();
+  const slots = [...new Set(fd.getAll("slot").map(String))]
+    .map((k) => k.split("-").map(Number))
+    .filter(([w, d]) => Number.isInteger(w) && w >= 0 && w <= 52 && Number.isInteger(d) && d >= 1 && d <= 7);
+  let copied = 0;
+  // One at a time: each copy is the newest session right after it is made.
+  for (const [week, day] of slots) {
+    const { error } = await db.rpc("clone_sessions", {
+      p_from_program: programId,
+      p_to_program: programId,
+      p_session: sessionId,
+      p_to_week: week >= 1 ? week : null,
+      p_name_suffix: "",
+    });
+    if (error) break;
+    const { data: made } = await db.from("sessions").select("id").eq("program_id", programId).order("position", { ascending: false }).limit(1).maybeSingle();
+    if (!made) break;
+    await db.from("sessions").update({ weekday: day, scheduled_date: null }).eq("id", made.id);
+    copied++;
+  }
+  if (copied < slots.length) go(`/programs/${programId}?error=` + encodeURIComponent(`Copied to ${copied} of ${slots.length} days. Try the rest again.`));
+  go(`/programs/${programId}?saved=1`);
+}
+
 // ----------------------------------------------------------------- sessions
 
 export async function createSession(fd: FormData) {

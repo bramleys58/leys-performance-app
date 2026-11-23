@@ -370,12 +370,12 @@ export function ProgressView({
                       {f.latest !== f.bestValue ? ` · last ${val(f.latest)}` : ""}
                     </span>
                   </span>
-                  <Sparkline values={f.best === "fastest" ? f.history.map((v) => -v) : f.history} label={`${f.name}: ${f.history.map((v) => val(v)).join(", ")}`} />
+                  <Sparkline values={f.history} label={`${f.name}: ${f.history.map((v) => val(v)).join(", ")}`} />
                 </li>
               );
             })}
           </ul>
-          <p className="mt-2 text-xs text-muted">Sprints are kept per distance. The line goes up when you get faster, farther or heavier.</p>
+          <p className="mt-2 text-xs text-muted">Sprints are kept per distance; their line is the time, so it goes down as you get faster. Jumps, throws and sleds go up.</p>
         </Card>
       )}
 

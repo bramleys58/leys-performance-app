@@ -1,4 +1,5 @@
 import type { TrackingType } from "@/lib/plan";
+import type { Best, LogField } from "@/lib/field";
 
 /** One exercise on the logging screen: from the program ("plan") or added during the workout ("extra"). */
 export type LoggerRow = {
@@ -24,6 +25,10 @@ export type LoggerRow = {
   note: string | null;
   videoUrl: string | null;
   tracking: TrackingType;
+  /** Speed/field exercises: their own columns, distance unit and best result. Null for gym exercises. */
+  logFields: LogField[] | null;
+  best: Best | null;
+  distanceUnit: "m" | "cm";
   weightStep: number;
   plannedKg: number | null;
   previous: { setNumber: number; weight: number | null; reps: number | null; seconds: number | null; distance: number | null }[];
@@ -40,7 +45,25 @@ export type LoggedSet = {
   skipped: boolean;
 };
 
-type ExerciseInfo = { tracking_type: TrackingType; weight_step: number | string; video_url: string | null; equipment?: string | null } | null;
+type ExerciseInfo = {
+  tracking_type: TrackingType;
+  weight_step: number | string;
+  video_url: string | null;
+  equipment?: string | null;
+  log_fields?: string[] | null;
+  best?: string | null;
+  distance_unit?: string | null;
+} | null;
+
+/** The speed/field settings of an exercise, as the logger wants them. */
+export function fieldInfo(info: { log_fields?: string[] | null; best?: string | null; distance_unit?: string | null } | null | undefined) {
+  const fields = (info?.log_fields ?? []).filter((f): f is LogField => ["weight", "reps", "seconds", "distance"].includes(f));
+  return {
+    logFields: fields.length ? fields : null,
+    best: (["fastest", "farthest", "heaviest"].includes(info?.best ?? "") ? info?.best : null) as Best | null,
+    distanceUnit: (info?.distance_unit === "cm" ? "cm" : "m") as "m" | "cm",
+  };
+}
 
 type PrevRow = { set_number: number; weight: number | string | null; reps: number | null; seconds: number | string | null; distance: number | string | null };
 
@@ -69,6 +92,7 @@ export function extraRow(
     note: null,
     videoUrl: info?.video_url ?? null,
     tracking: info?.tracking_type ?? "load",
+    ...fieldInfo(info),
     weightStep: Number(info?.weight_step ?? 2.5),
     plannedKg: null,
     previous: previous.map((p) => ({ setNumber: p.set_number, weight: n(p.weight), reps: p.reps, seconds: n(p.seconds), distance: n(p.distance) })),

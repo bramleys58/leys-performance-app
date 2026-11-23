@@ -5,6 +5,7 @@ import { showWeight, storeKg } from "@/lib/units";
 import { displayOrder, nextGroupLetter, type LoggedSet, type LoggerRow } from "@/lib/logger-types";
 import { SUPERSET_COLORS, firstNumber, looksLikeTime, supersetLabels, warmupSets } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/client";
+import { distanceForSet, plannedDistances, resultField } from "@/lib/field";
 import { ExerciseNote } from "@/components/exercise-note";
 import { addWorkoutExercise, deleteSet, discardWorkout, finishWorkout, removeWorkoutExercise, saveSet, setSupersetGroups, setWorkoutOrder, swapExercise, type SetInput } from "../../athlete-actions";
 
@@ -77,7 +78,7 @@ const parse = (v: string | undefined) => {
 };
 
 /** Exercises where the athlete can switch between counting reps and timing the set. */
-const canSwitchTime = (row: LoggerRow) => row.tracking === "load" || row.tracking === "bodyweight_reps" || row.tracking === "reps_only" || row.tracking === "time";
+const canSwitchTime = (row: LoggerRow) => !row.logFields && row.tracking === "load" || row.tracking === "bodyweight_reps" || row.tracking === "reps_only" || row.tracking === "time";
 
 /** Timed by default: a time exercise, a time target ("20s"), or timed the last time it was logged. */
 const timedByDefault = (row: LoggerRow) =>
@@ -85,6 +86,11 @@ const timedByDefault = (row: LoggerRow) =>
 
 /** Which columns an exercise needs. `timed` is the athlete's own reps/time choice, if they made one. */
 function columns(row: LoggerRow, timed?: boolean) {
+  // Speed/field exercises bring their own columns.
+  if (row.logFields) {
+    const f = row.logFields;
+    return { weight: f.includes("weight"), reps: f.includes("reps"), seconds: f.includes("seconds"), distance: f.includes("distance"), rpe: row.askRpe };
+  }
   const distance = row.tracking === "distance" || row.tracking === "distance_height";
   const timeLike = !distance && (canSwitchTime(row) && timed !== undefined ? timed : timedByDefault(row));
   return {
@@ -318,20 +324,23 @@ export function Logger(props: Props) {
       const e = logged.get(keyOf(row.id, s));
       if (e && !e.skipped) earlier = e;
     }
-    const planned = firstNumber(row.reps);
+    // The measured result (a sprint time, a jump distance) is never filled in for them.
+    if (field === resultField(row.best)) return "";
+    const planned = row.logFields ? null : firstNumber(row.reps);
     if (field === "weight") {
       const kg = earlier?.weight ?? row.plannedKg ?? prevSame?.weight ?? null;
       return kg == null ? "" : trim(planDisplay(kg));
     }
     if (field === "reps") {
-      const n = planned ?? earlier?.reps ?? prevSame?.reps ?? null;
+      const n = planned ?? (row.logFields ? firstNumber(row.reps) : null) ?? earlier?.reps ?? prevSame?.reps ?? null;
       return n == null ? "" : trim(n);
     }
     if (field === "seconds") {
       const n = planned ?? earlier?.seconds ?? prevSame?.seconds ?? null;
       return n == null ? "" : trim(n);
     }
-    const n = earlier?.distance ?? prevSame?.distance ?? null;
+    // A distance the program asks for ("6 x 20m") comes first.
+    const n = distanceForSet(row.reps, setNumber) ?? earlier?.distance ?? prevSame?.distance ?? null;
     return n == null ? "" : trim(n);
   };
 
@@ -707,8 +716,12 @@ export function Logger(props: Props) {
     const inputs: { field: Field; head: string }[] = [
       ...(cols.weight ? [{ field: "weight" as Field, head: row.tracking === "bodyweight_reps" ? `+${unit}` : unit }] : []),
       ...(cols.reps ? [{ field: "reps" as Field, head: "Reps" }] : []),
-      ...(cols.seconds ? [{ field: "seconds" as Field, head: "Sec" }] : []),
-      ...(cols.distance ? [{ field: "distance" as Field, head: row.tracking === "distance_height" ? "Result" : "m" }] : []),
+      // Field work reads distance first, then time: "10 m in 1.85 s".
+      ...(cols.distance && row.logFields
+        ? [{ field: "distance" as Field, head: row.best === "farthest" ? `Result (${row.distanceUnit})` : row.distanceUnit }]
+        : []),
+      ...(cols.seconds ? [{ field: "seconds" as Field, head: row.best === "fastest" ? "Time (opt.)" : "Sec" }] : []),
+      ...(cols.distance && !row.logFields ? [{ field: "distance" as Field, head: row.tracking === "distance_height" ? "Result" : "m" }] : []),
       ...(cols.rpe ? [{ field: "rpe" as Field, head: "RPE" }] : []),
     ];
     const grid = { gridTemplateColumns: `1.75rem minmax(0,1.3fr) ${inputs.map(() => "minmax(0,1fr)").join(" ")} 2.5rem` };
@@ -721,7 +734,9 @@ export function Logger(props: Props) {
     // Warm-up sets, in the athlete's unit, from the weight of the first set (typed, planned or last time).
     const work = warmOpen[row.id] ? Number((shown(row, 1, "weight") || suggestion(row, 1, "weight")).replace(",", ".")) || 0 : 0;
     const warm = work > 0 ? warmupSets(work, unit === "lbs" ? 5 : row.weightStep) : [];
-    const planLine = [row.sets && row.reps ? `${row.sets} × ${row.reps}` : row.reps, row.tempo ? `tempo ${row.tempo}` : null, targetLine].filter(Boolean).join(" · ");
+    // "2x10, 1x20m" already says how many; no "3 ×" in front.
+    const listed = (plannedDistances(row.reps)?.length ?? 0) > 1;
+    const planLine = [row.sets && row.reps && !listed ? `${row.sets} × ${row.reps}` : row.reps, row.tempo ? `tempo ${row.tempo}` : null, targetLine].filter(Boolean).join(" · ");
 
     return (
       <section key={row.id} id={`ex-${row.id}`} className="scroll-mt-32 rounded-2xl border border-border bg-surface p-3" style={color ? { borderLeft: `4px solid ${color}` } : undefined}>
@@ -880,7 +895,7 @@ export function Logger(props: Props) {
                   prev.weight != null ? `${trim(toDisplay(prev.weight))} ${unit}` : null,
                   prev.reps != null ? `${prev.reps}` : null,
                   prev.seconds != null ? `${trim(prev.seconds)} s` : null,
-                  prev.distance != null ? `${trim(prev.distance)} m` : null,
+                  prev.distance != null ? `${trim(prev.distance)} ${row.distanceUnit}` : null,
                 ]
                   .filter(Boolean)
                   .join(" × ") || "✓"

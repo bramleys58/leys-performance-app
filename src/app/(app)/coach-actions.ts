@@ -1,5 +1,6 @@
 "use server";
 
+import { FIELD_PRESETS, plannedDistances } from "@/lib/field";
 import { nextInQueue } from "@/lib/review-queue";
 import { siteOrigin } from "@/lib/site";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
@@ -375,7 +376,10 @@ export async function addRow(fd: FormData) {
     section,
     superset_group: text(fd, "superset_group")?.toUpperCase().slice(0, 2) ?? null,
     position: (last?.[0]?.position ?? -1) + 1,
-    sets: int(fd, "sets") ?? defaults?.default_sets ?? (section === "prep" ? 1 : 3),
+    sets:
+      (plannedDistances(repsWithUnit(text(fd, "reps"), text(fd, "reps_unit")))?.length ?? 0) > 1
+        ? (plannedDistances(repsWithUnit(text(fd, "reps"), text(fd, "reps_unit"))) as number[]).length
+        : (int(fd, "sets") ?? defaults?.default_sets ?? (section === "prep" ? 1 : 3)),
     reps: repsWithUnit(text(fd, "reps"), text(fd, "reps_unit")) ?? defaults?.default_reps ?? null,
     tempo: text(fd, "tempo") ?? defaults?.default_tempo ?? null,
     coaching_note: text(fd, "coaching_note") ?? defaults?.default_note ?? null,
@@ -392,8 +396,11 @@ type Db = Awaited<ReturnType<typeof createClient>>;
 function repsWithUnit(raw: string | null, unit: string | null): string | null {
   if (!raw || !unit) return raw;
   const timed = /\d\s*(s|sec|secs|seconds|min)\b/i.test(raw);
+  // Metres go at the end, so "2x10, 2x15, 2x20" becomes "2x10, 2x15, 2x20m".
+  if (unit === "m" && !/\d\s*(m|cm)\b/i.test(raw)) return /\d$/.test(raw.trim()) ? `${raw.trim()}m` : raw;
   if (unit === "sec" && !timed) return raw.replace(/^(\s*\d+(?:[.,]\d+)?(?:\s*[-–]\s*\d+(?:[.,]\d+)?)?)/, "$1s");
   if (unit === "reps" && timed) return raw.replace(/(\d)\s*(s|sec|secs|seconds)\b/gi, "$1");
+  if (unit === "reps" && /\d\s*m\b/i.test(raw)) return raw.replace(/(\d)\s*m\b/gi, "$1");
   return raw;
 }
 
@@ -409,7 +416,10 @@ async function persistRows(db: Db, fd: FormData, sessionId: string) {
         .update({
           display_name: text(fd, f("display_name")) ?? "Exercise",
           superset_group: text(fd, f("superset_group"))?.toUpperCase().slice(0, 2) ?? null,
-          sets: int(fd, f("sets")),
+          // "2x10, 2x15, 2x20m" sets its own number of sets.
+          sets: (plannedDistances(repsWithUnit(text(fd, f("reps")), text(fd, f("reps_unit"))))?.length ?? 0) > 1
+            ? (plannedDistances(repsWithUnit(text(fd, f("reps")), text(fd, f("reps_unit")))) as number[]).length
+            : int(fd, f("sets")),
           reps: repsWithUnit(text(fd, f("reps")), text(fd, f("reps_unit"))),
           tempo: text(fd, f("tempo")),
           target_type: targetType === "weight" || targetType === "percent" || targetType === "rpe" ? targetType : "none",
@@ -512,7 +522,10 @@ export async function updateExercise(fd: FormData) {
   const back = `/library/${id}`;
   const name = text(fd, "name");
   if (!name) go(back + "?error=" + encodeURIComponent("A name is required."));
-  const tracking = text(fd, "tracking_type") ?? "load";
+  const choice = text(fd, "tracking_type") ?? "load";
+  // "field:sprint" and the like: a speed/field preset with its own columns and best result.
+  const preset = choice.startsWith("field:") ? FIELD_PRESETS.find((p) => `field:${p.key}` === choice) : undefined;
+  const tracking = preset ? "distance" : choice;
   const aliases = (text(fd, "aliases") ?? "")
     .split(/[;\n]/)
     .map((a) => a.trim())
@@ -527,6 +540,9 @@ export async function updateExercise(fd: FormData) {
       primary_muscle: text(fd, "primary_muscle"),
       equipment: text(fd, "equipment"),
       tracking_type: TRACKING.includes(tracking) ? tracking : "load",
+      log_fields: preset ? preset.fields : null,
+      best: preset ? preset.best : null,
+      distance_unit: preset ? preset.unit : "m",
       weight_step: num(fd, "weight_step") ?? 2.5,
       counts_for_maxes: fd.get("counts_for_maxes") === "on",
       default_sets: int(fd, "default_sets"),

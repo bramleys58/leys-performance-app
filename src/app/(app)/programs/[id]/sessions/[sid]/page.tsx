@@ -43,7 +43,8 @@ export default async function SessionEditorPage({ params, searchParams }: PagePr
   const trackingOf = new Map(((stepData ?? []) as { id: string; tracking_type: string }[]).map((e) => [e.id, e.tracking_type]));
   // Shown as Sec when the row has a time ("30s") or the exercise is a time exercise.
   const isTimed = (r: { reps: string | null; exercise_id: string | null }) => looksLikeTime(r.reps) || (!r.reps && trackingOf.get(r.exercise_id ?? "") === "time");
-  const repsShown = (reps: string | null) => (reps ?? "").replace(/(\d)\s*(s|sec|secs|seconds)\b/gi, "$1");
+  const isMetres = (r: { reps: string | null }) => /\d\s*m\b/i.test(r.reps ?? "");
+  const repsShown = (reps: string | null) => (reps ?? "").replace(/(\d)\s*(s|sec|secs|seconds|m)\b/gi, "$1");
   const weeks = weekNumbers((weekData ?? []) as { week: number | null }[]);
   const isSlot = session.kind === "slot";
   const rowsKey = rows
@@ -80,11 +81,12 @@ export default async function SessionEditorPage({ params, searchParams }: PagePr
                   <input name={`sets__${r.id}`} defaultValue={r.sets ?? ""} inputMode="numeric" className={small} />
                 </label>
                 <div className="text-xs text-muted">
-                  <select name={`reps_unit__${r.id}`} defaultValue={isTimed(r) ? "sec" : "reps"} aria-label="Reps or seconds" className="-ml-0.5 bg-transparent text-xs text-muted">
+                  <select name={`reps_unit__${r.id}`} defaultValue={isTimed(r) ? "sec" : isMetres(r) ? "m" : "reps"} aria-label="Reps, seconds or metres" className="-ml-0.5 bg-transparent text-xs text-muted">
                     <option value="reps">Reps</option>
                     <option value="sec">Sec</option>
+                    <option value="m">Metres</option>
                   </select>
-                  <input name={`reps__${r.id}`} defaultValue={isTimed(r) ? repsShown(r.reps) : (r.reps ?? "")} placeholder="8 ea" aria-label="Reps or seconds" className={small} />
+                  <input name={`reps__${r.id}`} defaultValue={isTimed(r) || isMetres(r) ? repsShown(r.reps) : (r.reps ?? "")} placeholder="8 ea" aria-label="Reps or seconds" className={small} />
                 </div>
                 <label className="text-xs text-muted">
                   Tempo
@@ -137,6 +139,7 @@ export default async function SessionEditorPage({ params, searchParams }: PagePr
             <select name="reps_unit" aria-label="Reps or seconds" defaultValue="reps" className="rounded-r-lg border border-l-0 border-border bg-surface-2 px-1 text-xs text-muted">
               <option value="reps">reps</option>
               <option value="sec">sec</option>
+              <option value="m">m</option>
             </select>
           </div>
           <input name="tempo" placeholder="Tempo" aria-label="Tempo" className={small} />

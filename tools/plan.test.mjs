@@ -212,3 +212,35 @@ console.log("weekly.ts: all checks passed");
   assert.deepEqual(list.map((x) => `${x.athlete}:${x.kind}:${x.daysLeft}`), ["Cas:none:null", "Gus:draft:null", "Dre:ended:-2", "Ann:ending:5"]);
   console.log("blocks.ts: all checks passed");
 }
+
+{
+  const { fieldRecords, fieldBests, plannedDistance } = await import("../src/lib/field.ts");
+  assert.equal(plannedDistance("6 x 20m"), 20);
+  assert.equal(plannedDistance("20m"), 20);
+  assert.equal(plannedDistance("30 cm"), 30);
+  assert.equal(plannedDistance("8 ea"), null);
+  const bestOf = new Map([["spr", "fastest"], ["bj", "farthest"], ["sled", "heaviest"]]);
+  const S = (exerciseId, o) => ({ exerciseId, weight: null, reps: null, seconds: null, distance: null, ...o });
+  const before = [S("spr", { distance: 10, seconds: 1.8 }), S("spr", { distance: 20, seconds: 3.1 }), S("bj", { reps: 3, distance: 240 }), S("sled", { weight: 80, distance: 20 })];
+  const today = [
+    S("spr", { distance: 10, seconds: 1.75 }), // faster 10 m: record
+    S("spr", { distance: 20, seconds: 3.2 }), // slower 20 m
+    S("spr", { distance: 30, seconds: 4.2 }), // first 30 m: not a record
+    S("bj", { reps: 3, distance: 239 }),
+    S("bj", { reps: 3, distance: 251 }), // farther: record
+    S("sled", { weight: 80, distance: 20 }), // same weight: not a record
+    S("spr", { distance: 10, seconds: null }), // no time entered: ignored
+  ];
+  const rec = fieldRecords(today, before, bestOf).map((r) => `${r.exerciseId}:${r.value}`).sort();
+  assert.deepEqual(rec, ["bj:251", "spr:1.75"]);
+  assert.equal(fieldBests(today, bestOf).get("spr|10").value, 1.75);
+  const { plannedDistances, distanceForSet } = await import("../src/lib/field.ts");
+  assert.deepEqual(plannedDistances("10, 15, 20m"), [10, 15, 20]);
+  assert.deepEqual(plannedDistances("2x10, 2x15, 2x20 m"), [10, 10, 15, 15, 20, 20]);
+  assert.deepEqual(plannedDistances("2×10m, 1×30m"), [10, 10, 30]);
+  assert.deepEqual(plannedDistances("20m"), [20]);
+  assert.equal(plannedDistances("8 ea"), null);
+  assert.equal(distanceForSet("10, 15, 20m", 2), 15);
+  assert.equal(distanceForSet("10, 15, 20m", 5), 20);
+  console.log("field.ts: all checks passed");
+}

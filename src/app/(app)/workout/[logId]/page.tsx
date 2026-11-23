@@ -4,7 +4,8 @@ import { ActionButton, Card, SecondaryButton } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { epley, roundToStep, sortRows, type PlanRow, type TrackingType } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/server";
-import { extraRow, type LoggedSet, type LoggerRow } from "@/lib/logger-types";
+import { extraRow, fieldInfo, type LoggedSet, type LoggerRow } from "@/lib/logger-types";
+import { fieldRecords, type Best, type FieldSet } from "@/lib/field";
 import { reopenWorkout } from "../../athlete-actions";
 import { reviewWorkout } from "../../coach-actions";
 import { Logger } from "./logger";
@@ -30,31 +31,31 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
     log.session_id
       ? supabase
           .from("session_exercises")
-          .select("*, exercises!session_exercises_exercise_id_fkey(tracking_type, weight_step, video_url, equipment), base:exercises!session_exercises_max_exercise_id_fkey(name)")
+          .select("*, exercises!session_exercises_exercise_id_fkey(tracking_type, weight_step, video_url, equipment, log_fields, best, distance_unit), base:exercises!session_exercises_max_exercise_id_fkey(name)")
           .eq("session_id", log.session_id)
       : Promise.resolve({ data: [] as unknown[] }),
     supabase.from("set_logs").select("*").eq("workout_log_id", logId),
     supabase
       .from("workout_exercises")
-      .select("id, exercise_id, display_name, position, superset_group, exercises(tracking_type, weight_step, video_url, equipment)")
+      .select("id, exercise_id, display_name, position, superset_group, exercises(tracking_type, weight_step, video_url, equipment, log_fields, best, distance_unit)")
       .eq("workout_log_id", logId)
       .order("position"),
   ]);
-  type Extra = { id: string; exercise_id: string | null; display_name: string; position: number; superset_group: string | null; exercises: { tracking_type: TrackingType; weight_step: number; video_url: string | null; equipment: string | null } | null };
+  type Extra = { id: string; exercise_id: string | null; display_name: string; position: number; superset_group: string | null; exercises: { tracking_type: TrackingType; weight_step: number; video_url: string | null; equipment: string | null; log_fields: string[] | null; best: string | null; distance_unit: string | null } | null };
   const extras = (extraData ?? []) as unknown as Extra[];
   const isFree = !log.session_id;
 
-  type Row = PlanRow & { base: { name: string } | null; exercises: { tracking_type: TrackingType; weight_step: number; video_url: string | null; equipment: string | null } | null };
+  type Row = PlanRow & { base: { name: string } | null; exercises: { tracking_type: TrackingType; weight_step: number; video_url: string | null; equipment: string | null; log_fields: string[] | null; best: string | null; distance_unit: string | null } | null };
   const rows = sortRows((rowData ?? []) as Row[]);
   // Swaps made in this workout, and the alternatives the coach approved for the planned exercises.
   const plannedIds = [...new Set(rows.map((r) => r.exercise_id).filter(Boolean))] as string[];
   const [{ data: swapData }, { data: altData }] = await Promise.all([
-    supabase.from("workout_swaps").select("session_exercise_id, exercise_id, exercise_name, exercises(tracking_type, weight_step, video_url)").eq("workout_log_id", logId),
+    supabase.from("workout_swaps").select("session_exercise_id, exercise_id, exercise_name, exercises(tracking_type, weight_step, video_url, log_fields, best, distance_unit)").eq("workout_log_id", logId),
     plannedIds.length
       ? supabase.from("exercise_alternatives").select("exercise_id, alt:exercises!exercise_alternatives_alternative_id_fkey(id, name, archived)").in("exercise_id", plannedIds)
       : Promise.resolve({ data: [] }),
   ]);
-  type Swap = { session_exercise_id: string; exercise_id: string; exercise_name: string; exercises: { tracking_type: TrackingType; weight_step: number; video_url: string | null } | null };
+  type Swap = { session_exercise_id: string; exercise_id: string; exercise_name: string; exercises: { tracking_type: TrackingType; weight_step: number; video_url: string | null; log_fields: string[] | null; best: string | null; distance_unit: string | null } | null };
   const swapBy = new Map(((swapData ?? []) as unknown as Swap[]).map((s) => [s.session_exercise_id, s]));
   const altsBy = new Map<string, { id: string; name: string }[]>();
   for (const a of (altData ?? []) as unknown as { exercise_id: string; alt: { id: string; name: string; archived: boolean } | null }[]) {
@@ -103,6 +104,7 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
         note: r.coaching_note,
         videoUrl: swap.exercises?.video_url ?? null,
         tracking: swap.exercises?.tracking_type ?? "load",
+        ...fieldInfo(swap.exercises),
         weightStep: Number(swap.exercises?.weight_step ?? 2.5),
         plannedKg: null,
         alternatives,
@@ -139,6 +141,7 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
       note: r.coaching_note,
       videoUrl: r.video_url ?? r.exercises?.video_url ?? null,
       tracking: r.exercises?.tracking_type ?? "load",
+      ...fieldInfo(r.exercises),
       weightStep: step,
       plannedKg,
       alternatives,
@@ -202,14 +205,19 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
     // Sets per exercise, in the order they were planned or added.
     const unitOf = athlete.unit;
     const show = (kg: number) => new Intl.NumberFormat("en-GB", { maximumFractionDigits: 2 }).format(unitOf === "lbs" ? kg / KG_PER_LB : kg);
+    const unitOfRow = new Map(loggerRows.map((r) => [r.id, r.distanceUnit]));
     const setText = (x: LoggedSet) => {
       if (x.skipped) return "skipped";
+      const du = unitOfRow.get(x.rowId) ?? "m";
+      const n = (v: number) => String(Math.round(Number(v) * 100) / 100);
       const parts: string[] = [];
       if (x.weight != null && x.reps != null) parts.push(`${show(x.weight)}×${x.reps}`);
       else if (x.reps != null) parts.push(`${x.reps} reps`);
       else if (x.weight != null) parts.push(`${show(x.weight)} ${unitOf}`);
-      if (x.seconds != null) parts.push(`${x.seconds}s`);
-      if (x.distance != null) parts.push(`${x.distance} m`);
+      // A sprint reads "20 m in 3.12 s"; a jump or sled just its distance.
+      if (x.distance != null && x.seconds != null) parts.push(`${n(x.distance)} ${du} in ${n(x.seconds)} s`);
+      else if (x.seconds != null) parts.push(`${n(x.seconds)}s`);
+      else if (x.distance != null) parts.push(`${n(x.distance)} ${du}`);
       if (x.rpe != null) parts.push(`@${x.rpe}`);
       return parts.join(" ") || "done";
     };
@@ -224,6 +232,7 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
       else blocks.push({ group: e.group, items: [e] });
     }
     const factor = athlete.unit === "lbs" ? 1 / KG_PER_LB : 1;
+    const fmt = (n: number) => new Intl.NumberFormat("en-GB", { maximumFractionDigits: 1 }).format(n);
     const tonnage = done.reduce((t, s) => t + (s.weight && s.reps ? Number(s.weight) * s.reps : 0), 0) * factor;
     const timed = log.started_at ? Math.max(1, Math.round((new Date(log.finished_at).getTime() - new Date(log.started_at).getTime()) / 60000)) : null;
     const minutes: number | null = log.duration_minutes ?? (timed != null && timed <= 360 ? timed : null);
@@ -238,16 +247,50 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
       const e = epley(Number(s.weight), s.reps);
       if (e && e > (todayBest.get(s.exercise_id)?.e1rm ?? 0)) todayBest.set(s.exercise_id, { name: s.exercise_name, e1rm: e, weight: Number(s.weight), reps: s.reps });
     }
-    const prs: { exerciseId: string; name: string; weight: number; reps: number }[] = [];
-    if (todayBest.size > 0) {
+    type Pr = { exerciseId: string; name: string; text: string; matches: (x: LoggedSet) => boolean };
+    const prs: Pr[] = [];
+    // Speed/field exercises: their own kind of best (time per distance, distance, weight).
+    const bestOf = new Map<string, Best>();
+    const rowOfField = new Map<string, LoggerRow>();
+    for (const r of loggerRows) {
+      if (!r.exerciseId || !r.best) continue;
+      bestOf.set(r.exerciseId, r.best);
+      rowOfField.set(r.exerciseId, r);
+    }
+    const fieldToday: FieldSet[] = [];
+    const num = (v: number | string | null) => (v == null ? null : Number(v));
+    for (const x of done) {
+      if (x.exercise_id && bestOf.has(x.exercise_id)) fieldToday.push({ exerciseId: x.exercise_id, weight: num(x.weight), reps: x.reps, seconds: num(x.seconds), distance: num(x.distance) });
+    }
+    if (todayBest.size > 0 || fieldToday.length > 0) {
       const { data: earlier } = await supabase
         .from("set_logs")
-        .select("exercise_id, weight, reps")
+        .select("exercise_id, weight, reps, seconds, distance")
         .eq("athlete_id", athlete.id)
         .neq("workout_log_id", logId)
         .eq("skipped", false)
-        .in("exercise_id", [...todayBest.keys()])
+        .in("exercise_id", [...todayBest.keys(), ...bestOf.keys()])
         .limit(5000);
+      const before = ((earlier ?? []) as { exercise_id: string; weight: number | null; reps: number | null; seconds: number | null; distance: number | null }[])
+        .filter((s) => bestOf.has(s.exercise_id))
+        .map((s) => ({ exerciseId: s.exercise_id, weight: s.weight == null ? null : Number(s.weight), reps: s.reps, seconds: s.seconds == null ? null : Number(s.seconds), distance: s.distance == null ? null : Number(s.distance) }));
+      for (const rec of fieldRecords(fieldToday, before, bestOf)) {
+        const row = rowOfField.get(rec.exerciseId) as LoggerRow;
+        const r2 = (v: number) => String(Math.round(v * 100) / 100);
+        const text =
+          rec.best === "fastest"
+            ? `${rec.distance != null ? `${r2(rec.distance)} ${row.distanceUnit} in ` : ""}${r2(rec.value)} s`
+            : rec.best === "farthest"
+              ? `${r2(rec.value)} ${row.distanceUnit}`
+              : `${fmt(rec.value * factor)} ${athlete.unit}`;
+        const field = rec.best === "fastest" ? "seconds" : rec.best === "farthest" ? "distance" : "weight";
+        prs.push({
+          exerciseId: rec.exerciseId,
+          name: row.name,
+          text,
+          matches: (x) => !x.skipped && x[field] != null && Math.abs(Number(x[field]) - rec.value) < 0.001 && (rec.best !== "fastest" || (x.distance ?? null) === rec.distance),
+        });
+      }
       const prevBest = new Map<string, number>();
       for (const s of (earlier ?? []) as { exercise_id: string; weight: number | null; reps: number | null }[]) {
         const e = s.weight && s.reps ? epley(Number(s.weight), s.reps) : null;
@@ -255,11 +298,19 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
       }
       for (const [id, b] of todayBest) {
         const prev = prevBest.get(id);
-        if (prev !== undefined && b.e1rm > prev + 0.01) prs.push({ exerciseId: id, name: b.name, weight: b.weight, reps: b.reps });
+        if (prev !== undefined && b.e1rm > prev + 0.01)
+          prs.push({
+            exerciseId: id,
+            name: b.name,
+            text: `${fmt(b.weight * factor)} ${athlete.unit} × ${b.reps}`,
+            matches: (x) => !x.skipped && x.weight != null && Math.abs(Number(x.weight) - b.weight) < 0.001 && x.reps === b.reps,
+          });
       }
     }
 
-    const prOf = new Map(prs.map((p) => [p.exerciseId, p]));
+    // An exercise can have more than one record today (a 10 m and a 20 m sprint).
+    const prOf = new Map<string, Pr[]>();
+    for (const p of prs) prOf.set(p.exerciseId, [...(prOf.get(p.exerciseId) ?? []), p]);
 
     // Which workout this is for the athlete, counting every finished one up to this one.
     const { count: workoutNumber } = await supabase
@@ -269,7 +320,6 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
       .not("finished_at", "is", null)
       .lte("finished_at", log.finished_at);
 
-    const fmt = (n: number) => new Intl.NumberFormat("en-GB", { maximumFractionDigits: 1 }).format(n);
     const tiles = [
       { label: "Sets", value: String(done.length) },
       { label: `${athlete.unit} lifted`, value: fmt(Math.round(tonnage)) },
@@ -297,11 +347,8 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
             <h2 className="font-semibold">New personal records</h2>
             <ul className="mt-2 space-y-1 text-sm">
               {prs.map((p) => (
-                <li key={p.name}>
-                  <span className="font-medium">{p.name}</span>{" "}
-                  <span className="text-muted">
-                    {fmt(p.weight * factor)} {athlete.unit} × {p.reps}
-                  </span>
+                <li key={p.name + p.text}>
+                  <span className="font-medium">{p.name}</span> <span className="text-muted">{p.text}</span>
                 </li>
               ))}
             </ul>
@@ -361,7 +408,7 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
                             <p className="text-sm tabular-nums text-muted">
                               {e.sets.map((x, i) => {
                                 // The set that made the PR is shown in green.
-                                const isPr = !!pr && !marked && !x.skipped && x.weight != null && Math.abs(Number(x.weight) - pr.weight) < 0.001 && x.reps === pr.reps;
+                                const isPr = !!pr && !marked && pr.some((p) => p.matches(x));
                                 if (isPr) marked = true;
                                 return (
                                   <span key={x.setNumber}>

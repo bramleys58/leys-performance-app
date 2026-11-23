@@ -254,7 +254,7 @@ export async function addWorkoutExercise(workoutLogId: string, exerciseId: strin
   if (error || !row) return null;
 
   const [{ data: info }, { data: previous }] = await Promise.all([
-    exId ? supabase.from("exercises").select("tracking_type, weight_step, video_url, equipment").eq("id", exId).maybeSingle() : Promise.resolve({ data: null }),
+    exId ? supabase.from("exercises").select("tracking_type, weight_step, video_url, equipment, log_fields, best, distance_unit").eq("id", exId).maybeSingle() : Promise.resolve({ data: null }),
     exId ? supabase.rpc("previous_sets", { p_athlete: log.athlete_id, p_exercises: [exId], p_before: log.performed_on, p_exclude: log.id }) : Promise.resolve({ data: [] }),
   ]);
   return extraRow(row, info, previous ?? [], 3);

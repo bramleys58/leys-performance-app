@@ -31,7 +31,7 @@ export function ProgressView({
   const max = Math.max(...data.weeks.map((w) => w.tonnage), 1);
   const thisWeek = data.weeks[data.weeks.length - 1];
   const lastWeek = data.weeks[data.weeks.length - 2];
-  const empty = data.weeks.every((w) => w.tonnage === 0 && w.sessions === 0) && data.prs.length === 0 && data.maxes.length === 0 && data.tests.length === 0 && data.wellness.days.length === 0;
+  const empty = data.weeks.every((w) => w.tonnage === 0 && w.sessions === 0) && data.prs.length === 0 && data.maxes.length === 0 && data.tests.length === 0 && data.wellness.days.length === 0 && data.field.length === 0;
   const signed = (v: number, digits = 1) => `${v > 0 ? "+" : v < 0 ? "−" : "±"}${new Intl.NumberFormat("en-GB", { maximumFractionDigits: digits }).format(Math.abs(v))}`;
   const bw = data.bodyweight;
   const weeklyMode = bw.weeksLogged >= bw.weeksNeeded && bw.weekly.length >= 2;
@@ -349,6 +349,33 @@ export function ProgressView({
               </li>
             ))}
           </ul>
+        </Card>
+      )}
+
+      {data.field.length > 0 && (
+        <Card>
+          <h2 className="font-semibold">Speed &amp; power</h2>
+          <ul className="mt-3 divide-y divide-border">
+            {data.field.map((f) => {
+              const val = (v: number) => (f.unit === "kg" ? `${n1(toUnit(v))} ${unit}` : `${n1(v)} ${f.unit}`);
+              return (
+                <li key={f.key} className="flex items-center justify-between gap-3 py-2.5">
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium">
+                      {f.name}
+                      {f.distance != null && <span className="text-muted"> · {n1(f.distance)} m</span>}
+                    </span>
+                    <span className="block text-sm text-muted">
+                      best {val(f.bestValue)} · {short(f.bestOn)}
+                      {f.latest !== f.bestValue ? ` · last ${val(f.latest)}` : ""}
+                    </span>
+                  </span>
+                  <Sparkline values={f.best === "fastest" ? f.history.map((v) => -v) : f.history} label={`${f.name}: ${f.history.map((v) => val(v)).join(", ")}`} />
+                </li>
+              );
+            })}
+          </ul>
+          <p className="mt-2 text-xs text-muted">Sprints are kept per distance. The line goes up when you get faster, farther or heavier.</p>
         </Card>
       )}
 

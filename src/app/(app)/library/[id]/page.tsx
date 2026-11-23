@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { ExercisePicker } from "@/components/exercise-picker";
 import { ActionButton, BackLink, Card, Field, Notice, PrimaryButton, SecondaryButton, Select, inputClass } from "@/components/ui";
 import { requireCoach } from "@/lib/auth";
+import { FIELD_PRESETS, presetFor } from "@/lib/field";
 import { createClient } from "@/lib/supabase/server";
 import { reviewQueue } from "@/lib/review-queue";
 import Link from "next/link";
@@ -14,7 +15,7 @@ const TRACKING = [
   ["distance", "Distance (metres)"],
   ["distance_height", "Distance or height (best result)"],
   ["reps_only", "Reps only (no PR)"],
-  ["completion", "Completion (done or not)"],
+  ["completion", "Tick when done (drills, A-skips, wickets)"],
 ];
 
 export default async function ExercisePage({ params, searchParams }: PageProps<"/library/[id]">) {
@@ -30,6 +31,7 @@ export default async function ExercisePage({ params, searchParams }: PageProps<"
     supabase.from("session_exercises").select("id", { count: "exact", head: true }).eq("exercise_id", id),
   ]);
   if (!e) notFound();
+  const fieldPreset = presetFor(e.log_fields, e.best, e.distance_unit);
 
   // Who added it, when an athlete did.
   const { data: addedBy } =
@@ -108,13 +110,23 @@ export default async function ExercisePage({ params, searchParams }: PageProps<"
             <Field label="Equipment" name="equipment" defaultValue={e.equipment ?? ""} />
             <Field label="Weight step (kg)" name="weight_step" inputMode="decimal" defaultValue={String(e.weight_step ?? 2.5)} />
           </div>
-          <Select label="What the athlete logs" name="tracking_type" defaultValue={e.tracking_type}>
-            {TRACKING.map(([v, l]) => (
-              <option key={v} value={v}>
-                {l}
-              </option>
-            ))}
+          <Select label="What the athlete logs" name="tracking_type" defaultValue={fieldPreset ? `field:${fieldPreset.key}` : e.tracking_type}>
+            <optgroup label="Gym">
+              {TRACKING.map(([v, l]) => (
+                <option key={v} value={v}>
+                  {l}
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="Speed and field">
+              {FIELD_PRESETS.map((p) => (
+                <option key={p.key} value={`field:${p.key}`}>
+                  {p.label} ({p.example})
+                </option>
+              ))}
+            </optgroup>
           </Select>
+          <p className="-mt-2 text-xs text-muted">Speed and field: sprints keep their best time per distance, jumps and throws their farthest, sleds their heaviest.</p>
           <Field label="Video link" name="video_url" inputMode="url" defaultValue={e.video_url ?? ""} />
           {e.video_url && (
             <a href={e.video_url} target="_blank" rel="noopener noreferrer" className="inline-block rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm">

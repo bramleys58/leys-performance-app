@@ -3,9 +3,12 @@ import { epley, todayISO, weekRange } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/server";
 import { WEEKS_FOR_WEEKLY, liftSummaries, rollingAverage, weeklyAverages, weeklyRate, weightChange, type SetPoint } from "@/lib/progress-math";
 import { best, type Test } from "@/lib/testing";
+import { better, type Best } from "@/lib/field";
 
 export type WeekPoint = { monday: string; tonnage: number; sessions: number };
 export type PR = { exerciseId: string; name: string; weight: number; reps: number; e1rm: number; on: string };
+/** One speed/field record: an exercise, or one distance of a sprint. */
+export type FieldProgress = { key: string; name: string; best: Best; unit: string; distance: number | null; bestValue: number; bestOn: string; latest: number; latestOn: string; history: number[] };
 export type TestSummary = { test: Test; latest: number; latestOn: string; previous: number | null; best: number; history: { on: string; value: number }[] };
 
 const WEEKS = 8;
@@ -20,7 +23,7 @@ export async function getProgress(athleteId: string) {
 
   const twoWeeksAgo = new Date(new Date(todayISO() + "T12:00:00Z").getTime() - 13 * 86400000).toISOString().slice(0, 10);
   const yearAgo = new Date(new Date(todayISO() + "T12:00:00Z").getTime() - 365 * 86400000).toISOString().slice(0, 10);
-  const [{ data: logs }, { data: sets }, { data: maxes }, { data: results }, { data: tests }, { data: checkRows }, { data: bwRows }, { data: bwCheckRows }, { data: programRows }] = await Promise.all([
+  const [{ data: logs }, { data: sets }, { data: maxes }, { data: results }, { data: tests }, { data: checkRows }, { data: bwRows }, { data: bwCheckRows }, { data: programRows }, { data: fieldRows }] = await Promise.all([
     supabase.from("workout_logs").select("id, performed_on, finished_at, duration_minutes").eq("athlete_id", athleteId).gte("performed_on", from),
     supabase
       .from("set_logs")
@@ -41,6 +44,14 @@ export async function getProgress(athleteId: string) {
       .select("id, name, start_date, created_at, sessions(session_exercises(exercise_id, section, position, target_type, max_exercise_id, exercises!session_exercises_exercise_id_fkey(name, tracking_type, counts_for_maxes)))")
       .eq("athlete_id", athleteId)
       .eq("status", "active"),
+    // Speed and field work: exercises with a best result (fastest, farthest, heaviest).
+    supabase
+      .from("set_logs")
+      .select("exercise_id, weight, reps, seconds, distance, workout_logs!inner(performed_on), exercises!inner(name, best, distance_unit)")
+      .eq("athlete_id", athleteId)
+      .eq("skipped", false)
+      .not("exercises.best", "is", null)
+      .limit(10000),
   ]);
 
   // ---- weekly volume (kg lifted) and sessions, last 8 weeks
@@ -179,5 +190,35 @@ export async function getProgress(athleteId: string) {
     ? { name: programs.length === 1 ? programs[0].name : `${programs.length} programs`, start: blockStart, lifts: liftSummaries(liftIds, liftNames, setPoints, blockStart, todayISO()) }
     : null;
 
-  return { weeks, prs, maxes: maxList, tests: testSummaries, wellness, avgMinutes, bodyweight, block };
+  // ---- speed and field records, best per exercise (per distance for timed work)
+  type FieldRow = { exercise_id: string; weight: number | null; reps: number | null; seconds: number | null; distance: number | null; workout_logs: { performed_on: string }; exercises: { name: string; best: Best; distance_unit: string } };
+  const fieldByKey = new Map<string, FieldProgress & { days: Map<string, number> }>();
+  for (const r of (fieldRows ?? []) as unknown as FieldRow[]) {
+    const kind = r.exercises.best;
+    const raw = kind === "fastest" ? r.seconds : kind === "farthest" ? r.distance : r.weight;
+    if (raw == null || !(Number(raw) > 0)) continue;
+    const v = Number(raw);
+    const dist = kind === "fastest" && r.distance != null ? Number(r.distance) : null;
+    const key = `${r.exercise_id}|${dist ?? ""}`;
+    const on = r.workout_logs.performed_on;
+    const unit = kind === "fastest" ? "s" : kind === "farthest" ? r.exercises.distance_unit : "kg";
+    const cur = fieldByKey.get(key) ?? { key, name: r.exercises.name, best: kind, unit, distance: dist, bestValue: v, bestOn: on, latest: v, latestOn: on, history: [], days: new Map<string, number>() };
+    if (better(kind, v, cur.bestValue) || (v === cur.bestValue && on < cur.bestOn)) {
+      cur.bestValue = v;
+      cur.bestOn = on;
+    }
+    // Best of each day, for the line and "latest".
+    const day = cur.days.get(on);
+    if (day == null || better(kind, v, day)) cur.days.set(on, v);
+    fieldByKey.set(key, cur);
+  }
+  const field: FieldProgress[] = [...fieldByKey.values()]
+    .map(({ days, ...f }) => {
+      const ordered = [...days.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+      const [latestOn, latest] = ordered[ordered.length - 1];
+      return { ...f, latest, latestOn, history: ordered.slice(-10).map(([, v]) => v) };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name) || (a.distance ?? 0) - (b.distance ?? 0));
+
+  return { weeks, prs, maxes: maxList, tests: testSummaries, wellness, avgMinutes, bodyweight, block, field };
 }

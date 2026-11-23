@@ -6,7 +6,7 @@ import { epley, roundToStep, sortRows, type PlanRow, type TrackingType } from "@
 import { createClient } from "@/lib/supabase/server";
 import { extraRow, fieldInfo, type LoggedSet, type LoggerRow } from "@/lib/logger-types";
 import { fieldRecords, type Best, type FieldSet } from "@/lib/field";
-import { reopenWorkout } from "../../athlete-actions";
+import { reopenWorkout, repeatWorkout } from "../../athlete-actions";
 import { reviewWorkout } from "../../coach-actions";
 import { Logger } from "./logger";
 
@@ -37,11 +37,11 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
     supabase.from("set_logs").select("*").eq("workout_log_id", logId),
     supabase
       .from("workout_exercises")
-      .select("id, exercise_id, display_name, position, superset_group, exercises(tracking_type, weight_step, video_url, equipment, log_fields, best, distance_unit)")
+      .select("id, exercise_id, display_name, position, superset_group, planned_sets, exercises(tracking_type, weight_step, video_url, equipment, log_fields, best, distance_unit)")
       .eq("workout_log_id", logId)
       .order("position"),
   ]);
-  type Extra = { id: string; exercise_id: string | null; display_name: string; position: number; superset_group: string | null; exercises: { tracking_type: TrackingType; weight_step: number; video_url: string | null; equipment: string | null; log_fields: string[] | null; best: string | null; distance_unit: string | null } | null };
+  type Extra = { id: string; exercise_id: string | null; display_name: string; position: number; superset_group: string | null; planned_sets: number | null; exercises: { tracking_type: TrackingType; weight_step: number; video_url: string | null; equipment: string | null; log_fields: string[] | null; best: string | null; distance_unit: string | null } | null };
   const extras = (extraData ?? []) as unknown as Extra[];
   const isFree = !log.session_id;
 
@@ -78,6 +78,21 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
   type Prev = { exercise_id: string; set_number: number; weight: number | null; reps: number | null; seconds: number | null; distance: number | null; performed_on: string };
   const prevBy = new Map<string, Prev[]>();
   for (const p of (lastData ?? []) as Prev[]) prevBy.set(p.exercise_id, [...(prevBy.get(p.exercise_id) ?? []), p]);
+  // A repeated workout shows (and fills in) the numbers of the workout it repeats, not just the latest.
+  if (log.repeat_of && exerciseIds.length) {
+    const [{ data: src }, { data: srcLog }] = await Promise.all([
+      supabase.from("set_logs").select("exercise_id, set_number, weight, reps, seconds, distance").eq("workout_log_id", log.repeat_of).eq("skipped", false).in("exercise_id", exerciseIds).order("set_number"),
+      supabase.from("workout_logs").select("performed_on").eq("id", log.repeat_of).maybeSingle(),
+    ]);
+    const fromSrc = new Map<string, Prev[]>();
+    for (const r of (src ?? []) as Omit<Prev, "performed_on">[]) {
+      const list = fromSrc.get(r.exercise_id) ?? [];
+      // Number them 1, 2, 3 in order, in case a set was deleted in between.
+      list.push({ ...r, set_number: list.length + 1, performed_on: srcLog?.performed_on ?? log.performed_on });
+      fromSrc.set(r.exercise_id, list);
+    }
+    for (const [id, list] of fromSrc) prevBy.set(id, list);
+  }
   const maxBy = new Map(((maxData ?? []) as { exercise_id: string; value: number }[]).map((m) => [m.exercise_id, Number(m.value)]));
 
   const loggerRows: LoggerRow[] = rows.map((r) => {
@@ -157,7 +172,7 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
 
   for (const e of extras) {
     const prev = ((e.exercise_id ? prevBy.get(e.exercise_id) : undefined) ?? []) as Prev[];
-    loggerRows.push(extraRow(e, e.exercises, prev, 3));
+    loggerRows.push(extraRow(e, e.exercises, prev, e.planned_sets ?? 3));
   }
 
   type SetRow = { session_exercise_id: string | null; workout_exercise_id: string | null; exercise_id: string | null; exercise_name: string; set_number: number; weight: number | null; reps: number | null; seconds: number | null; distance: number | null; rpe: number | null; skipped: boolean };
@@ -452,6 +467,10 @@ export default async function WorkoutPage({ params }: PageProps<"/workout/[logId
         <Link href={backHref} className="block w-full rounded-xl bg-accent px-4 py-3 text-center font-semibold text-accent-text">
           Done
         </Link>
+        <form action={repeatWorkout.bind(null, logId)}>
+          <SecondaryButton type="submit">Repeat today</SecondaryButton>
+        </form>
+        <p className="-mt-2 text-center text-xs text-muted">Starts a new workout with these exercises and last time&apos;s numbers filled in.</p>
         <form action={reopenWorkout}>
           <input type="hidden" name="workout_log_id" value={logId} />
           <SecondaryButton type="submit">Edit sets</SecondaryButton>

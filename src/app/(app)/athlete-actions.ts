@@ -212,6 +212,72 @@ export async function startFreeWorkout(fd: FormData) {
   redirect(`/workout/${data.id}`);
 }
 
+/**
+ * Starts today's workout as a copy of a finished one: same exercises in the same order, same
+ * supersets and as many sets as were done. Weights and reps show last time's numbers to adjust.
+ */
+export async function repeatWorkout(fromLogId: string) {
+  const user = await requireUser();
+  const supabase = await createClient();
+  const back = `/workout/${fromLogId}`;
+  const { data: from } = await supabase.from("workout_logs").select("id, athlete_id, session_id, session_name").eq("id", fromLogId).maybeSingle();
+  if (!from) redirect("/");
+
+  // Every exercise that was done, with its order and superset from the plan or the free workout.
+  const [{ data: sets }, { data: planRows }, { data: freeRows }] = await Promise.all([
+    supabase.from("set_logs").select("session_exercise_id, workout_exercise_id, exercise_id, exercise_name, skipped").eq("workout_log_id", fromLogId),
+    from.session_id ? supabase.from("session_exercises").select("id, section, position, superset_group").eq("session_id", from.session_id) : Promise.resolve({ data: [] }),
+    supabase.from("workout_exercises").select("id, position, superset_group").eq("workout_log_id", fromLogId),
+  ]);
+  type Row = { key: string; exerciseId: string | null; name: string; sets: number; order: number; group: string | null };
+  const plan = new Map(((planRows ?? []) as { id: string; section: string; position: number; superset_group: string | null }[]).map((r) => [r.id, r]));
+  const free = new Map(((freeRows ?? []) as { id: string; position: number; superset_group: string | null }[]).map((r) => [r.id, r]));
+  const rows = new Map<string, Row>();
+  for (const s of (sets ?? []) as { session_exercise_id: string | null; workout_exercise_id: string | null; exercise_id: string | null; exercise_name: string | null; skipped: boolean }[]) {
+    if (s.skipped) continue;
+    const key = s.session_exercise_id ?? s.workout_exercise_id ?? s.exercise_id ?? s.exercise_name ?? "";
+    const p = s.session_exercise_id ? plan.get(s.session_exercise_id) : undefined;
+    const f = s.workout_exercise_id ? free.get(s.workout_exercise_id) : undefined;
+    const cur = rows.get(key) ?? {
+      key,
+      exerciseId: s.exercise_id,
+      name: s.exercise_name ?? "Exercise",
+      sets: 0,
+      // Warm-up (prep) first, then the workout, then anything added during it.
+      order: p ? (p.section === "prep" ? 0 : 1000) + p.position : 2000 + (f?.position ?? 0),
+      group: p?.superset_group ?? f?.superset_group ?? null,
+    };
+    cur.sets++;
+    rows.set(key, cur);
+  }
+  const list = [...rows.values()].sort((a, b) => a.order - b.order);
+  if (list.length === 0) redirect(back + "?error=" + encodeURIComponent("Nothing was logged in this workout, so there is nothing to repeat."));
+
+  const { data: log, error } = await supabase
+    .from("workout_logs")
+    .insert({ athlete_id: from.athlete_id, session_id: null, session_name: from.session_name ?? "Workout", performed_on: todayISO(), started_at: new Date().toISOString(), logged_by: user.id, repeat_of: from.id })
+    .select("id")
+    .single();
+  if (error || !log) redirect(back + "?error=" + encodeURIComponent("Could not start the workout."));
+  const { error: rowsError } = await supabase.from("workout_exercises").insert(
+    list.map((r, i) => ({
+      workout_log_id: log.id,
+      athlete_id: from.athlete_id,
+      exercise_id: r.exerciseId,
+      display_name: r.name,
+      position: i,
+      superset_group: r.group,
+      planned_sets: Math.min(r.sets, 30),
+    })),
+  );
+  if (rowsError) {
+    await supabase.from("workout_logs").delete().eq("id", log.id);
+    redirect(back + "?error=" + encodeURIComponent("Could not copy the exercises."));
+  }
+  revalidatePath("/");
+  redirect(`/workout/${log.id}`);
+}
+
 /** Adds an exercise to a workout that is in progress and returns it ready for the logging screen. */
 export async function addWorkoutExercise(workoutLogId: string, exerciseId: string | null, name: string, supersetGroup: string | null = null): Promise<LoggerRow | null> {
   const user = await requireUser();

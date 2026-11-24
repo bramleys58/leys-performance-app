@@ -11,6 +11,7 @@ export const FIELD_PRESETS: FieldPreset[] = [
   { key: "sled", label: "Sled or carry: kg + distance", fields: ["weight", "distance"], best: "heaviest", unit: "m", example: "sled push, farmer carry" },
   { key: "sled_time", label: "Sled timed: kg + distance + time", fields: ["weight", "distance", "seconds"], best: "fastest", unit: "m", example: "resisted sprint" },
   { key: "jump_cm", label: "Jump: reps + result (cm)", fields: ["reps", "distance"], best: "farthest", unit: "cm", example: "broad jump, vertical" },
+  { key: "jump_weighted", label: "Weighted jump: kg + reps + result (cm)", fields: ["weight", "reps", "distance"], best: "farthest", unit: "cm", example: "broad jump with a med ball" },
   { key: "jump_m", label: "Bounds: reps + result (m)", fields: ["reps", "distance"], best: "farthest", unit: "m", example: "triple jump, bounds" },
   { key: "throw", label: "Throw: kg + result (m)", fields: ["weight", "distance"], best: "farthest", unit: "m", example: "med ball throw, shot put" },
 ];

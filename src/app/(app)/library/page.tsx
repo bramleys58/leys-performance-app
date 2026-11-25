@@ -49,7 +49,10 @@ export default async function LibraryPage({ searchParams }: PageProps<"/library"
 
   // Strip characters that have a meaning in the filter syntax before searching.
   const term = q.replace(/[%_,()\\]/g, " ").trim();
-  if (term) query = query.ilike("name", `%${term}%`);
+  // Dashes, spaces and punctuation don't matter: "push up", "push-up" and "pushup" all match.
+  const key = term ? term.toLowerCase().replace(/[^a-z0-9]/g, "") : "";
+  if (term && key) query = query.or(`name.ilike.%${term.replace(/[,()%*]/g, " ").trim()}%,name_key.like.%${key}%`);
+  else if (term) query = query.ilike("name", `%${term}%`);
   if (pattern) query = query.eq("movement_pattern", pattern);
   if (review) query = query.eq("needs_review", true);
   if (review === "check") query = query.or("review_note.is.null,review_note.not.ilike.*automatically*");

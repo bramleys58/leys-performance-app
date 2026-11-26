@@ -1,7 +1,8 @@
 import { readiness, type CheckIn } from "@/lib/checkin";
 import { epley, todayISO, weekRange } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/server";
-import { WEEKS_FOR_WEEKLY, liftSummaries, rollingAverage, weeklyAverages, weeklyRate, weightChange, type SetPoint } from "@/lib/progress-math";
+import { isMainLift } from "@/lib/main-lift";
+import { WEEKS_FOR_WEEKLY, liftOptions, liftSummaries, trackedLifts, rollingAverage, weeklyAverages, weeklyRate, weightChange, type SetPoint } from "@/lib/progress-math";
 import { best, type Test } from "@/lib/testing";
 import { better, type Best } from "@/lib/field";
 
@@ -23,11 +24,11 @@ export async function getProgress(athleteId: string) {
 
   const twoWeeksAgo = new Date(new Date(todayISO() + "T12:00:00Z").getTime() - 13 * 86400000).toISOString().slice(0, 10);
   const yearAgo = new Date(new Date(todayISO() + "T12:00:00Z").getTime() - 365 * 86400000).toISOString().slice(0, 10);
-  const [{ data: logs }, { data: sets }, { data: maxes }, { data: results }, { data: tests }, { data: checkRows }, { data: bwRows }, { data: bwCheckRows }, { data: programRows }, { data: fieldRows }] = await Promise.all([
+  const [{ data: logs }, { data: sets }, { data: maxes }, { data: results }, { data: tests }, { data: checkRows }, { data: bwRows }, { data: bwCheckRows }, { data: programRows }, { data: fieldRows }, { data: trackedRows }] = await Promise.all([
     supabase.from("workout_logs").select("id, performed_on, finished_at, duration_minutes").eq("athlete_id", athleteId).gte("performed_on", from),
     supabase
       .from("set_logs")
-      .select("exercise_id, exercise_name, weight, reps, workout_logs!inner(performed_on), exercises(tracking_type, name)")
+      .select("exercise_id, exercise_name, weight, reps, workout_logs!inner(performed_on), exercises(tracking_type, name, movement_pattern, main_lift)")
       .eq("athlete_id", athleteId)
       .eq("skipped", false)
       .not("weight", "is", null)
@@ -52,6 +53,7 @@ export async function getProgress(athleteId: string) {
       .eq("skipped", false)
       .not("exercises.best", "is", null)
       .limit(10000),
+    supabase.from("tracked_lifts").select("exercise_id, position").eq("athlete_id", athleteId).order("position"),
   ]);
 
   // ---- weekly volume (kg lifted) and sessions, last 8 weeks
@@ -65,7 +67,7 @@ export async function getProgress(athleteId: string) {
     return idx >= 0 && idx < WEEKS ? weeks[idx] : null;
   };
 
-  type SetRow = { exercise_id: string | null; exercise_name: string; weight: number; reps: number; workout_logs: { performed_on: string }; exercises: { tracking_type: string; name: string } | null };
+  type SetRow = { exercise_id: string | null; exercise_name: string; weight: number; reps: number; workout_logs: { performed_on: string }; exercises: { tracking_type: string; name: string; movement_pattern: string | null; main_lift: boolean | null } | null };
   const allSets = ((sets ?? []) as unknown as SetRow[]).sort((a, b) => a.workout_logs.performed_on.localeCompare(b.workout_logs.performed_on));
   for (const s of allSets) {
     const w = weekOf(s.workout_logs.performed_on);
@@ -220,5 +222,16 @@ export async function getProgress(athleteId: string) {
     })
     .sort((a, b) => a.name.localeCompare(b.name) || (a.distance ?? 0) - (b.distance ?? 0));
 
-  return { weeks, prs, maxes: maxList, tests: testSummaries, wellness, avgMinutes, bodyweight, block, field };
+  // ---- "My lifts": the lifts the athlete chose to follow, from everything ever logged
+  const liftSets: SetPoint[] = allSets
+    .filter((x) => x.exercise_id && ["load", "bodyweight_reps"].includes(x.exercises?.tracking_type ?? "load"))
+    .map((x) => ({ exerciseId: x.exercise_id as string, name: x.exercises?.name ?? x.exercise_name, weight: Number(x.weight), reps: x.reps, on: x.workout_logs.performed_on }));
+  const trackedIds = ((trackedRows ?? []) as { exercise_id: string }[]).map((r) => r.exercise_id);
+  // Only the big lifts can be chosen: squat, hinge, push, pull, Olympic (not curls or raises).
+  const mainIds = new Set(allSets.filter((x) => x.exercise_id && x.exercises && isMainLift(x.exercises.name, x.exercises.movement_pattern, x.exercises.main_lift)).map((x) => x.exercise_id as string));
+  const options = liftOptions(liftSets.filter((x) => mainIds.has(x.exerciseId) || trackedIds.includes(x.exerciseId)));
+  const optionNames = new Map(options.map((o) => [o.exerciseId, o.name]));
+  const myLifts = trackedLifts(trackedIds, optionNames, liftSets, todayISO());
+
+  return { weeks, prs, maxes: maxList, tests: testSummaries, wellness, avgMinutes, bodyweight, block, field, myLifts, liftOptions: options, trackedIds };
 }

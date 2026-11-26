@@ -15,6 +15,7 @@ export function ProgressView({
   historyHref,
   logBodyweight,
   bwStatus,
+  saveLifts,
 }: {
   data: Data;
   unit: "kg" | "lbs";
@@ -22,6 +23,8 @@ export function ProgressView({
   /** Server action that saves a weigh-in. */
   logBodyweight: (fd: FormData) => Promise<void>;
   bwStatus?: string;
+  /** Server action that saves the lifts to follow. */
+  saveLifts: (fd: FormData) => Promise<void>;
 }) {
   const toUnit = (kg: number) => (unit === "lbs" ? kg / KG_PER_LB : kg);
   const n0 = (v: number) => new Intl.NumberFormat("en-GB", { maximumFractionDigits: 0 }).format(v);
@@ -178,8 +181,70 @@ export function ProgressView({
     );
   }
 
+  const myLifts = (
+    <Card>
+      <div id="my-lifts" className="flex scroll-mt-20 items-baseline justify-between gap-3">
+        <h2 className="font-semibold">My lifts</h2>
+        <p className="text-sm text-muted">estimated 1RM</p>
+      </div>
+      {data.myLifts.length === 0 && (
+        <p className="mt-1 text-sm text-muted">Pick the main lifts you want to follow: their best estimated 1RM and how it moves over the last 6 months.</p>
+      )}
+      {data.myLifts.length > 0 && (
+        <ul className="mt-3 divide-y divide-border">
+          {data.myLifts.map((l) => (
+            <li key={l.exerciseId} className="flex items-center gap-3 py-3">
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-medium">{l.name}</p>
+                <p className="text-sm text-muted">
+                  {l.best ? `best ${n1(toUnit(l.best.set.weight))} ${unit} × ${l.best.set.reps} · ${short(l.best.set.on)}` : "not logged yet"}
+                </p>
+              </div>
+              <Sparkline
+                values={l.weekly.map((w) => (w.e1rm == null ? null : toUnit(w.e1rm)))}
+                label={`${l.name}, best estimated 1RM per week: ${l.weekly.filter((w) => w.e1rm != null).map((w) => `${short(w.monday)} ${n1(toUnit(w.e1rm as number))} ${unit}`).join(", ") || "no sets yet"}`}
+              />
+              <div className="w-24 shrink-0 text-right">
+                <p className="font-bold tabular-nums">
+                  {l.best ? n1(toUnit(l.best.e1rm)) : "–"}
+                  {l.best && <span className="ml-1 text-xs font-normal text-muted">{unit}</span>}
+                </p>
+                <p className="text-xs tabular-nums text-muted">{l.recent ? `last 6 wk ${n1(toUnit(l.recent.e1rm))}` : "none in 6 wk"}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {data.liftOptions.length === 0 ? (
+        <p className="mt-2 text-sm text-muted">Log a few workouts with main lifts (squat, hinge, push, pull, Olympic lifts) and they show up here to choose from.</p>
+      ) : (
+        <details className="mt-3" open={data.myLifts.length === 0}>
+          <summary className="cursor-pointer text-sm font-medium text-accent">{data.myLifts.length ? "Change lifts" : "Choose lifts"}</summary>
+          <form action={saveLifts} className="mt-2 space-y-2">
+            <p className="text-xs text-muted">Up to 8. Main lifts you have logged, most logged first.</p>
+            <div className="grid gap-1.5 sm:grid-cols-2">
+              {data.liftOptions.slice(0, 40).map((o) => (
+                <label key={o.exerciseId} className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm">
+                  <input type="checkbox" name="lift" value={o.exerciseId} defaultChecked={data.trackedIds.includes(o.exerciseId)} />
+                  <span className="min-w-0 flex-1 truncate">{o.name}</span>
+                  <span className="text-xs text-muted">{o.sets} sets</span>
+                </label>
+              ))}
+            </div>
+            <ActionButton pendingLabel="Saving…" className="rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-accent-text">
+              Save
+            </ActionButton>
+          </form>
+        </details>
+      )}
+      <p className="mt-2 text-xs text-muted">Estimated 1RM from your best set (Epley); a single counts as itself. The line is the best per week over 6 months.</p>
+    </Card>
+  );
+
   return (
     <div className="space-y-5">
+      {myLifts}
+
       {data.block && lifts.length > 0 && (
         <Card>
           <div className="flex items-baseline justify-between gap-3">

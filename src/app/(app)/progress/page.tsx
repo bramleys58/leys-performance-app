@@ -3,7 +3,7 @@ import { ProgressView } from "@/components/progress-view";
 import { requireUser } from "@/lib/auth";
 import { getMyAthlete } from "@/lib/athlete";
 import { getProgress } from "@/lib/progress";
-import { logMyBodyweight } from "../athlete-actions";
+import { logMyBodyweight, saveTrackedLifts } from "../athlete-actions";
 
 export const metadata = { title: "My progress | Leys Performance" };
 
@@ -22,7 +22,7 @@ export default async function MyProgressPage({ searchParams }: PageProps<"/progr
   return (
     <div className="space-y-5">
       <h1 className="text-2xl font-bold">My progress</h1>
-      <ProgressView data={data} unit={athlete.unit} historyHref="/history" logBodyweight={logMyBodyweight} bwStatus={typeof sp.bw === "string" ? sp.bw : undefined} />
+      <ProgressView data={data} unit={athlete.unit} historyHref="/history" logBodyweight={logMyBodyweight} bwStatus={typeof sp.bw === "string" ? sp.bw : undefined} saveLifts={saveTrackedLifts.bind(null, athlete.id, "/progress")} />
     </div>
   );
 }

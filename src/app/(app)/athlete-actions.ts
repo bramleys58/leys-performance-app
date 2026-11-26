@@ -278,6 +278,18 @@ export async function repeatWorkout(fromLogId: string) {
   redirect(`/workout/${log.id}`);
 }
 
+/** Saves which lifts an athlete follows on the progress page (at most 8, in the order picked). */
+export async function saveTrackedLifts(athleteId: string, back: string, fd: FormData) {
+  await requireUser();
+  const supabase = await createClient();
+  const ids = [...new Set(fd.getAll("lift").map(String))].filter((x) => /^[0-9a-f-]{36}$/i.test(x)).slice(0, 8);
+  const to = back.startsWith("/") && !back.startsWith("//") ? back : "/progress";
+  const { error } = await supabase.from("tracked_lifts").delete().eq("athlete_id", athleteId);
+  if (!error && ids.length) await supabase.from("tracked_lifts").insert(ids.map((exercise_id, position) => ({ athlete_id: athleteId, exercise_id, position })));
+  revalidatePath(to);
+  redirect(to + "#my-lifts");
+}
+
 /** Adds an exercise to a workout that is in progress and returns it ready for the logging screen. */
 export async function addWorkoutExercise(workoutLogId: string, exerciseId: string | null, name: string, supersetGroup: string | null = null): Promise<LoggerRow | null> {
   const user = await requireUser();

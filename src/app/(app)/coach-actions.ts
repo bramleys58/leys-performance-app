@@ -540,6 +540,7 @@ export async function updateExercise(fd: FormData) {
       primary_muscle: text(fd, "primary_muscle"),
       equipment: text(fd, "equipment"),
       tracking_type: TRACKING.includes(tracking) ? tracking : "load",
+      main_lift: text(fd, "main_lift") === "yes" ? true : text(fd, "main_lift") === "no" ? false : null,
       log_fields: preset ? preset.fields : null,
       best: preset ? preset.best : null,
       distance_unit: preset ? preset.unit : "m",

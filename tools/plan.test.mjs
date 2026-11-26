@@ -244,3 +244,38 @@ console.log("weekly.ts: all checks passed");
   assert.equal(distanceForSet("10, 15, 20m", 5), 20);
   console.log("field.ts: all checks passed");
 }
+
+{
+  const { trackedLifts, liftOptions } = await import("../src/lib/progress-math.ts");
+  const P = (exerciseId, name, weight, reps, on) => ({ exerciseId, name, weight, reps, on });
+  const sets = [
+    P("sq", "Back Squat", 100, 5, "2026-06-01"), // e1RM 116.7 (old best, outside 6 weeks)
+    P("sq", "Back Squat", 110, 1, "2026-11-10"), // a single counts as itself: 110
+    P("sq", "Back Squat", 100, 3, "2026-11-24"), // 110
+    P("bp", "Bench Press", 80, 5, "2026-11-20"),
+    P("bp", "Bench Press", 80, 5, "2026-11-21"),
+    P("bp", "Bench Press", 80, 5, "2026-11-22"),
+    P("cu", "Curl", 0, 10, "2026-11-22"), // no weight: not an option
+  ];
+  const [sq, bp] = trackedLifts(["sq", "bp"], new Map(), sets, "2026-11-26", 26, 6);
+  assert.equal(sq.best.e1rm, 116.7);
+  assert.equal(sq.best.set.on, "2026-06-01");
+  assert.equal(sq.recent.e1rm, 110);
+  assert.equal(sq.recent.set.on, "2026-11-10");
+  assert.equal(sq.weekly.length, 26);
+  assert.equal(sq.weekly[25].e1rm, 110); // this week
+  assert.equal(bp.best.set.on, "2026-11-20"); // a tie keeps the first date
+  assert.deepEqual(liftOptions(sets).map((o) => `${o.name}:${o.sets}`), ["Back Squat:3", "Bench Press:3"]);
+  console.log("tracked lifts: all checks passed");
+}
+
+{
+  const { isMainLift } = await import("../src/lib/main-lift.ts");
+  const yes = [["Back Squat", "Squat"], ["Barbell Bench Press", "Push"], ["Romanian Deadlift", "Hinge"], ["Chin Up", "Pull"], ["Barbell Row", "Pull"], ["Power Clean", "Olympic"], ["Push Jerk", "Olympic"], ["Bulgarian Split Squats (Dumbells)", "Lunge"], ["Barbell Hip Thrust", "Hip"], ["Weighted Dip", "Push"], ["Overhead Press", "Push"]];
+  const no = [["Bicep Curl", "Pull"], ["Cable Lateral Raise", "Push"], ["Leg Curl", "Hinge"], ["Tricep Rope Pushdown", "Push"], ["Leg Extension", "Squat"], ["45° Back Extension", "Hinge"], ["Face Pull", "Pull"], ["Glute Bridge", "Hip"], ["Seated Calf Raise", "Foot-Calf"], ["Plank", "Core"]];
+  for (const [n, p] of yes) assert.equal(isMainLift(n, p, null), true, n);
+  for (const [n, p] of no) assert.equal(isMainLift(n, p, null), false, n);
+  assert.equal(isMainLift("Bicep Curl", "Pull", true), true); // coach override
+  assert.equal(isMainLift("Back Squat", "Squat", false), false);
+  console.log("main-lift.ts: all checks passed");
+}

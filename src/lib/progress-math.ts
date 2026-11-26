@@ -166,3 +166,52 @@ export function weightAxis(values: number[]) {
   }
   return { lo: min - 50, hi: max + 50, ticks: [min - 50, max + 50], step: 100 };
 }
+
+export type TrackedLift = {
+  exerciseId: string;
+  name: string;
+  /** Best estimated max ever, with the set behind it. */
+  best: { e1rm: number; set: SetPoint } | null;
+  /** Best estimated max in the last `recentWeeks` weeks. */
+  recent: { e1rm: number; set: SetPoint } | null;
+  /** Best estimated max per week, oldest first, null for weeks without the lift. */
+  weekly: { monday: string; e1rm: number | null }[];
+};
+
+/** The lifts an athlete follows: all-time best, recent best and a weekly line (half a year by default). */
+export function trackedLifts(ids: string[], names: Map<string, string>, sets: SetPoint[], today: string, weeks = 26, recentWeeks = 6): TrackedLift[] {
+  const endMonday = weekRange(today).monday;
+  const mondays = Array.from({ length: weeks }, (_, i) => addDays(endMonday, -7 * (weeks - 1 - i)));
+  const recentFrom = addDays(endMonday, -7 * (recentWeeks - 1));
+  const e1 = (s: SetPoint) => Math.round((epley(s.weight, s.reps) ?? 0) * 10) / 10;
+  return ids.map((id) => {
+    const mine = sets.filter((s) => s.exerciseId === id && s.weight > 0 && s.reps > 0);
+    let best: TrackedLift["best"] = null;
+    let recent: TrackedLift["recent"] = null;
+    for (const s of mine) {
+      const e = e1(s);
+      if (!e) continue;
+      // Ties go to the earlier date: that is when it was first reached.
+      if (!best || e > best.e1rm || (e === best.e1rm && s.on < best.set.on)) best = { e1rm: e, set: s };
+      if (s.on >= recentFrom && (!recent || e > recent.e1rm)) recent = { e1rm: e, set: s };
+    }
+    const weekly = mondays.map((monday) => {
+      const sunday = addDays(monday, 6);
+      const vals = mine.filter((s) => s.on >= monday && s.on <= sunday).map(e1);
+      return { monday, e1rm: vals.length ? Math.max(...vals) : null };
+    });
+    return { exerciseId: id, name: names.get(id) ?? mine[0]?.name ?? "Lift", best, recent, weekly };
+  });
+}
+
+/** Lifts that can be followed: everything logged with a weight and reps, most-logged first. */
+export function liftOptions(sets: SetPoint[]): { exerciseId: string; name: string; sets: number }[] {
+  const count = new Map<string, { exerciseId: string; name: string; sets: number }>();
+  for (const s of sets) {
+    if (!(s.weight > 0 && s.reps > 0)) continue;
+    const cur = count.get(s.exerciseId) ?? { exerciseId: s.exerciseId, name: s.name, sets: 0 };
+    cur.sets++;
+    count.set(s.exerciseId, cur);
+  }
+  return [...count.values()].sort((a, b) => b.sets - a.sets || a.name.localeCompare(b.name));
+}

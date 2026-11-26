@@ -3,6 +3,7 @@ import { ExercisePicker } from "@/components/exercise-picker";
 import { ActionButton, BackLink, Card, Field, Notice, PrimaryButton, SecondaryButton, Select, inputClass } from "@/components/ui";
 import { requireCoach } from "@/lib/auth";
 import { FIELD_PRESETS, presetFor } from "@/lib/field";
+import { isMainLift } from "@/lib/main-lift";
 import { createClient } from "@/lib/supabase/server";
 import { reviewQueue } from "@/lib/review-queue";
 import Link from "next/link";
@@ -127,6 +128,11 @@ export default async function ExercisePage({ params, searchParams }: PageProps<"
             </optgroup>
           </Select>
           <p className="-mt-2 text-xs text-muted">Speed and field: sprints keep their best time per distance, jumps and throws their farthest, sleds their heaviest.</p>
+          <Select label="Main lift on the progress page" name="main_lift" defaultValue={e.main_lift == null ? "auto" : e.main_lift ? "yes" : "no"}>
+            <option value="auto">Auto: {isMainLift(e.name, e.movement_pattern, null) ? "yes (big compound or Olympic lift)" : "no (isolation or accessory)"}</option>
+            <option value="yes">Yes, athletes can follow it</option>
+            <option value="no">No</option>
+          </Select>
           <Field label="Video link" name="video_url" inputMode="url" defaultValue={e.video_url ?? ""} />
           {e.video_url && (
             <a href={e.video_url} target="_blank" rel="noopener noreferrer" className="inline-block rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm">

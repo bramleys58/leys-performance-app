@@ -10,18 +10,18 @@ type Dot = { key: string; x: number; y: number; title: string; big?: boolean; so
  * Plot area drawn in percent: lines in a stretched SVG (strokes keep their width),
  * dots and labels as plain HTML so text stays readable at any screen width.
  */
-function Plot({ ticks, yPct, paths, dots, xLabels, label }: { ticks: number[]; yPct: (v: number) => number; paths: string[]; dots: Dot[]; xLabels: { key: string; x: number; text: string }[]; label: string }) {
+function Plot({ ticks, yPct, paths, dots, xLabels, label, height = "h-44" }: { ticks: number[]; yPct: (v: number) => number; paths: string[]; dots: Dot[]; xLabels: { key: string; x: number; text: string }[]; label: string; height?: string }) {
   const fmt = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
   return (
     <div role="img" aria-label={label} className="mt-5 grid grid-cols-[2.75rem_1fr] gap-x-2">
-      <div className="relative h-44">
+      <div className={`relative ${height}`}>
         {ticks.map((v) => (
           <span key={v} className="absolute right-0 -translate-y-1/2 text-xs tabular-nums text-muted" style={{ top: `${yPct(v)}%` }}>
             {fmt(v)}
           </span>
         ))}
       </div>
-      <div className="relative h-44">
+      <div className={`relative ${height}`}>
         <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 h-full w-full overflow-visible" aria-hidden>
           {ticks.map((v) => (
             <line key={v} x1="0" x2="100" y1={yPct(v)} y2={yPct(v)} className="stroke-border" strokeWidth="1" vectorEffect="non-scaling-stroke" />
@@ -172,3 +172,51 @@ export function WeeklyWeightChart({
     </figure>
   );
 }
+
+/**
+ * Estimated 1RM of one lift: a dot per week (that week's best) and a line for the best so far,
+ * which only goes up. Light weeks and deloads show as lower dots without pulling the line down.
+ */
+export function LiftChart({ name, weekly, bestBefore, toUnit, unit, short }: { name: string; weekly: { monday: string; e1rm: number | null }[]; bestBefore: number | null; toUnit: (kg: number) => number; unit: string; short: (d: string) => string }) {
+  const points = weekly.filter((w): w is { monday: string; e1rm: number } => w.e1rm != null);
+  if (points.length < 2) return null;
+  const first = points[0].monday;
+  const last = points[points.length - 1].monday;
+  const x0 = t(first);
+  const x1 = Math.max(t(last), x0 + 86400000);
+  // Best so far, carried over from before the chart starts.
+  const steps: { monday: string; best: number }[] = [];
+  for (const p of points) steps.push({ monday: p.monday, best: Math.max(steps.length ? steps[steps.length - 1].best : (bestBefore ?? 0), p.e1rm) });
+  const { lo, hi, ticks } = weightAxis([...points.map((p) => toUnit(p.e1rm)), ...steps.map((s) => toUnit(s.best))]);
+  const xPct = (d: string) => INSET + ((t(d) - x0) / (x1 - x0)) * (100 - 2 * INSET);
+  const yPct = (v: number) => (1 - (v - lo) / (hi - lo)) * 100;
+  // A step line: flat until a new best, then straight up.
+  let d = `M${xPct(steps[0].monday).toFixed(2)},${yPct(toUnit(steps[0].best)).toFixed(2)}`;
+  for (let i = 1; i < steps.length; i++) {
+    const x = xPct(steps[i].monday).toFixed(2);
+    d += ` L${x},${yPct(toUnit(steps[i - 1].best)).toFixed(2)} L${x},${yPct(toUnit(steps[i].best)).toFixed(2)}`;
+  }
+  return (
+    <figure>
+      <Plot
+        height="h-32"
+        label={`${name}: best estimated 1RM per week, ${points.map((p) => `${short(p.monday)} ${fmt1(toUnit(p.e1rm))} ${unit}`).join(", ")}`}
+        ticks={ticks}
+        yPct={yPct}
+        paths={[d]}
+        dots={points.map((p, i) => ({
+          key: p.monday,
+          x: xPct(p.monday),
+          y: yPct(toUnit(p.e1rm)),
+          solid: p.e1rm >= steps[i].best,
+          title: `Week of ${short(p.monday)}: ${fmt1(toUnit(p.e1rm))} ${unit}${p.e1rm >= steps[i].best && i > 0 && p.e1rm > steps[i - 1].best ? " (new best)" : ""}`,
+        }))}
+        xLabels={[
+          { key: "a", x: xPct(first), text: short(first) },
+          { key: "b", x: xPct(last), text: short(last) },
+        ]}
+      />
+    </figure>
+  );
+}
+

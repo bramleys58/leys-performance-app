@@ -1,5 +1,10 @@
 import Link from "next/link";
-import { BodyweightChart, Sparkline, WeeklyWeightChart } from "@/components/progress-charts";
+import {
+  BodyweightChart,
+  LiftChart,
+  Sparkline,
+  WeeklyWeightChart,
+} from "@/components/progress-charts";
 import { ActionButton, Card, Notice, inputClass } from "@/components/ui";
 import { todayISO } from "@/lib/plan";
 import type { getProgress } from "@/lib/progress";
@@ -27,15 +32,27 @@ export function ProgressView({
   saveLifts: (fd: FormData) => Promise<void>;
 }) {
   const toUnit = (kg: number) => (unit === "lbs" ? kg / KG_PER_LB : kg);
-  const n0 = (v: number) => new Intl.NumberFormat("en-GB", { maximumFractionDigits: 0 }).format(v);
-  const n1 = (v: number) => new Intl.NumberFormat("en-GB", { maximumFractionDigits: 2 }).format(v);
-  const short = (d: string) => new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" }).format(new Date(d + "T12:00:00Z"));
+  const n0 = (v: number) =>
+    new Intl.NumberFormat("en-GB", { maximumFractionDigits: 0 }).format(v);
+  const n1 = (v: number) =>
+    new Intl.NumberFormat("en-GB", { maximumFractionDigits: 2 }).format(v);
+  const short = (d: string) =>
+    new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" }).format(
+      new Date(d + "T12:00:00Z"),
+    );
 
   const max = Math.max(...data.weeks.map((w) => w.tonnage), 1);
   const thisWeek = data.weeks[data.weeks.length - 1];
   const lastWeek = data.weeks[data.weeks.length - 2];
-  const empty = data.weeks.every((w) => w.tonnage === 0 && w.sessions === 0) && data.prs.length === 0 && data.maxes.length === 0 && data.tests.length === 0 && data.wellness.days.length === 0 && data.field.length === 0;
-  const signed = (v: number, digits = 1) => `${v > 0 ? "+" : v < 0 ? "−" : "±"}${new Intl.NumberFormat("en-GB", { maximumFractionDigits: digits }).format(Math.abs(v))}`;
+  const empty =
+    data.weeks.every((w) => w.tonnage === 0 && w.sessions === 0) &&
+    data.prs.length === 0 &&
+    data.maxes.length === 0 &&
+    data.tests.length === 0 &&
+    data.wellness.days.length === 0 &&
+    data.field.length === 0;
+  const signed = (v: number, digits = 1) =>
+    `${v > 0 ? "+" : v < 0 ? "−" : "±"}${new Intl.NumberFormat("en-GB", { maximumFractionDigits: digits }).format(Math.abs(v))}`;
   const bw = data.bodyweight;
   const weeklyMode = bw.weeksLogged >= bw.weeksNeeded && bw.weekly.length >= 2;
   const thisWk = bw.weekly[bw.weekly.length - 1];
@@ -44,86 +61,176 @@ export function ProgressView({
 
   const bodyweightCard = (
     <Card>
-      <div id="bodyweight" className="flex scroll-mt-20 items-baseline justify-between gap-3">
+      <div
+        id="bodyweight"
+        className="flex scroll-mt-20 items-baseline justify-between gap-3"
+      >
         <h2 className="font-semibold">Bodyweight</h2>
-        {bw.points.length > 0 && <p className="text-sm text-muted">{bw.points.length} weigh-ins this year</p>}
+        {bw.points.length > 0 && (
+          <p className="text-sm text-muted">
+            {bw.points.length} weigh-ins this year
+          </p>
+        )}
       </div>
-      {bwStatus === "saved" && <div className="mt-3"><Notice kind="ok">Weigh-in saved.</Notice></div>}
-      {bwStatus === "invalid" && <div className="mt-3"><Notice kind="error">That weight doesn&apos;t look right. Fill in your weight in {unit}.</Notice></div>}
-      {bwStatus === "error" && <div className="mt-3"><Notice kind="error">Could not save the weigh-in. Try again.</Notice></div>}
+      {bwStatus === "saved" && (
+        <div className="mt-3">
+          <Notice kind="ok">Weigh-in saved.</Notice>
+        </div>
+      )}
+      {bwStatus === "invalid" && (
+        <div className="mt-3">
+          <Notice kind="error">
+            That weight doesn&apos;t look right. Fill in your weight in {unit}.
+          </Notice>
+        </div>
+      )}
+      {bwStatus === "error" && (
+        <div className="mt-3">
+          <Notice kind="error">Could not save the weigh-in. Try again.</Notice>
+        </div>
+      )}
       {bw.latest && weeklyMode && thisWk ? (
         <div className="mt-3 grid grid-cols-3 gap-3">
           <div>
-            <p className="text-2xl font-bold tabular-nums">{n1(toUnit(thisWk.avg))}</p>
+            <p className="text-2xl font-bold tabular-nums">
+              {n1(toUnit(thisWk.avg))}
+            </p>
             <p className="text-xs text-muted">
               {unit} avg, week of {short(thisWk.monday)}
             </p>
           </div>
           <div>
-            <p className="text-2xl font-bold tabular-nums">{thisWk.change == null ? "–" : signed(toUnit(thisWk.change))}</p>
+            <p className="text-2xl font-bold tabular-nums">
+              {thisWk.change == null ? "–" : signed(toUnit(thisWk.change))}
+            </p>
             <p className="text-xs text-muted">{unit} vs week before</p>
           </div>
           <div>
-            <p className="text-2xl font-bold tabular-nums">{bw.ratePerWeek == null ? "–" : signed(toUnit(bw.ratePerWeek), 2)}</p>
+            <p className="text-2xl font-bold tabular-nums">
+              {bw.ratePerWeek == null ? "–" : signed(toUnit(bw.ratePerWeek), 2)}
+            </p>
             <p className="text-xs text-muted">{unit} per week, last 4 weeks</p>
           </div>
         </div>
       ) : bw.latest ? (
         <div className="mt-3 grid grid-cols-3 gap-3">
           <div>
-            <p className="text-2xl font-bold tabular-nums">{n1(toUnit(bw.latest.kg))}</p>
+            <p className="text-2xl font-bold tabular-nums">
+              {n1(toUnit(bw.latest.kg))}
+            </p>
             <p className="text-xs text-muted">
-              {unit} · {bw.latest.day === todayISO() ? "today" : short(bw.latest.day)}
+              {unit} ·{" "}
+              {bw.latest.day === todayISO() ? "today" : short(bw.latest.day)}
             </p>
           </div>
           <div>
-            <p className="text-2xl font-bold tabular-nums">{bw.change7 == null ? "–" : signed(toUnit(bw.change7))}</p>
+            <p className="text-2xl font-bold tabular-nums">
+              {bw.change7 == null ? "–" : signed(toUnit(bw.change7))}
+            </p>
             <p className="text-xs text-muted">{unit} last 7 days</p>
           </div>
           <div>
-            <p className="text-2xl font-bold tabular-nums">{bw.change30 == null ? "–" : signed(toUnit(bw.change30))}</p>
+            <p className="text-2xl font-bold tabular-nums">
+              {bw.change30 == null ? "–" : signed(toUnit(bw.change30))}
+            </p>
             <p className="text-xs text-muted">{unit} last 30 days</p>
           </div>
         </div>
       ) : (
-        <p className="mt-2 text-sm text-muted">No weigh-ins yet. Weigh in at the same moment each time, for example in the morning before breakfast.</p>
+        <p className="mt-2 text-sm text-muted">
+          No weigh-ins yet. Weigh in at the same moment each time, for example
+          in the morning before breakfast.
+        </p>
       )}
       {weeklyMode ? (
         <>
-          <WeeklyWeightChart weeks={bw.weekly} toUnit={toUnit} unit={unit} short={short} />
+          <WeeklyWeightChart
+            weeks={bw.weekly}
+            toUnit={toUnit}
+            unit={unit}
+            short={short}
+          />
           <p className="mt-2 text-xs text-muted">
-            Latest weigh-in: {bw.latest ? `${n1(toUnit(bw.latest.kg))} ${unit}, ${bw.latest.day === todayISO() ? "today" : short(bw.latest.day)}` : "–"}.
+            Latest weigh-in:{" "}
+            {bw.latest
+              ? `${n1(toUnit(bw.latest.kg))} ${unit}, ${bw.latest.day === todayISO() ? "today" : short(bw.latest.day)}`
+              : "–"}
+            .
           </p>
           <details className="mt-2 text-sm">
-            <summary className="cursor-pointer text-muted">Show daily weigh-ins</summary>
-            <BodyweightChart points={bw.points.slice(-60)} toUnit={toUnit} unit={unit} short={short} />
+            <summary className="cursor-pointer text-muted">
+              Show daily weigh-ins
+            </summary>
+            <BodyweightChart
+              points={bw.points.slice(-60)}
+              toUnit={toUnit}
+              unit={unit}
+              short={short}
+            />
           </details>
         </>
       ) : (
         <>
-          <BodyweightChart points={bw.points.slice(-120)} toUnit={toUnit} unit={unit} short={short} />
-          {(bw.change7 != null || bw.change30 != null) && <p className="mt-2 text-xs text-muted">Changes use the 7-day average, so one heavy or light day doesn&apos;t throw them off.</p>}
+          <BodyweightChart
+            points={bw.points.slice(-120)}
+            toUnit={toUnit}
+            unit={unit}
+            short={short}
+          />
+          {(bw.change7 != null || bw.change30 != null) && (
+            <p className="mt-2 text-xs text-muted">
+              Changes use the 7-day average, so one heavy or light day
+              doesn&apos;t throw them off.
+            </p>
+          )}
           {bw.points.length > 0 && (
             <p className="mt-1 text-xs text-muted">
-              Weekly comparison shows after {bw.weeksNeeded} weeks with weigh-ins ({Math.min(bw.weeksLogged, bw.weeksNeeded)} of {bw.weeksNeeded} so far).
+              Weekly comparison shows after {bw.weeksNeeded} weeks with
+              weigh-ins ({Math.min(bw.weeksLogged, bw.weeksNeeded)} of{" "}
+              {bw.weeksNeeded} so far).
             </p>
           )}
         </>
       )}
-      <form action={logBodyweight} className="mt-4 flex flex-wrap items-end gap-2 border-t border-border pt-4">
+      <form
+        action={logBodyweight}
+        className="mt-4 flex flex-wrap items-end gap-2 border-t border-border pt-4"
+      >
         <label className="text-xs text-muted">
           Weight ({unit})
-          <input name="weight" inputMode="decimal" required placeholder={bw.latest ? n1(toUnit(bw.latest.kg)) : unit === "kg" ? "e.g. 82.5" : "e.g. 180"} className={inputClass + " w-32"} />
+          <input
+            name="weight"
+            inputMode="decimal"
+            required
+            placeholder={
+              bw.latest
+                ? n1(toUnit(bw.latest.kg))
+                : unit === "kg"
+                  ? "e.g. 82.5"
+                  : "e.g. 180"
+            }
+            className={inputClass + " w-32"}
+          />
         </label>
         <label className="text-xs text-muted">
           Day
-          <input name="day" type="date" defaultValue={todayISO()} max={todayISO()} className={inputClass} />
+          <input
+            name="day"
+            type="date"
+            defaultValue={todayISO()}
+            max={todayISO()}
+            className={inputClass}
+          />
         </label>
-        <ActionButton className="rounded-xl bg-accent px-5 py-3 font-semibold text-accent-text">{bw.loggedToday ? "Update" : "Log weight"}</ActionButton>
+        <ActionButton className="rounded-xl bg-accent px-5 py-3 font-semibold text-accent-text">
+          {bw.loggedToday ? "Update" : "Log weight"}
+        </ActionButton>
       </form>
       {bw.points.length > 0 && (
         <details className="mt-3 text-sm">
-          <summary className="cursor-pointer text-muted">{weeklyMode ? "Show as table" : "Show every weigh-in"}</summary>
+          <summary className="cursor-pointer text-muted">
+            {weeklyMode ? "Show as table" : "Show every weigh-in"}
+          </summary>
           {weeklyMode && (
             <table className="mt-2 w-full tabular-nums">
               <thead>
@@ -139,14 +246,18 @@ export function ProgressView({
                   <tr key={w.monday} className="border-t border-border">
                     <td className="py-1">{short(w.monday)}</td>
                     <td className="py-1 text-right">{n1(toUnit(w.avg))}</td>
-                    <td className="py-1 text-right text-muted">{w.change == null ? "–" : signed(toUnit(w.change))}</td>
+                    <td className="py-1 text-right text-muted">
+                      {w.change == null ? "–" : signed(toUnit(w.change))}
+                    </td>
                     <td className="py-1 text-right text-muted">{w.count}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
-          {weeklyMode && <p className="mt-3 text-xs text-muted">Every weigh-in:</p>}
+          {weeklyMode && (
+            <p className="mt-3 text-xs text-muted">Every weigh-in:</p>
+          )}
           <table className="mt-2 w-full tabular-nums">
             <thead>
               <tr className="text-left text-xs text-muted">
@@ -156,13 +267,18 @@ export function ProgressView({
               </tr>
             </thead>
             <tbody>
-              {[...bw.points].reverse().slice(0, 60).map((p) => (
-                <tr key={p.day} className="border-t border-border">
-                  <td className="py-1">{short(p.day)}</td>
-                  <td className="py-1 text-right">{n1(toUnit(p.kg))}</td>
-                  <td className="py-1 text-right text-muted">{n1(toUnit(p.avg))}</td>
-                </tr>
-              ))}
+              {[...bw.points]
+                .reverse()
+                .slice(0, 60)
+                .map((p) => (
+                  <tr key={p.day} className="border-t border-border">
+                    <td className="py-1">{short(p.day)}</td>
+                    <td className="py-1 text-right">{n1(toUnit(p.kg))}</td>
+                    <td className="py-1 text-right text-muted">
+                      {n1(toUnit(p.avg))}
+                    </td>
+                  </tr>
+                ))}
             </tbody>
           </table>
         </details>
@@ -175,7 +291,10 @@ export function ProgressView({
       <div className="space-y-5">
         {bodyweightCard}
         <Card>
-          <p className="text-sm text-muted">Lifts, records and tests appear here after the first logged workouts.</p>
+          <p className="text-sm text-muted">
+            Lifts, records and tests appear here after the first logged
+            workouts.
+          </p>
         </Card>
       </div>
     );
@@ -183,79 +302,134 @@ export function ProgressView({
 
   const myLifts = (
     <Card>
-      <div id="my-lifts" className="flex scroll-mt-20 items-baseline justify-between gap-3">
+      <div
+        id="my-lifts"
+        className="flex scroll-mt-20 items-baseline justify-between gap-3"
+      >
         <h2 className="font-semibold">My lifts</h2>
         <p className="text-sm text-muted">estimated 1RM</p>
       </div>
       {data.myLifts.length === 0 && (
-        <p className="mt-1 text-sm text-muted">Pick the main lifts you want to follow: their best estimated 1RM and how it moves over the last 6 months.</p>
+        <p className="mt-1 text-sm text-muted">
+          Pick the main lifts you want to follow: their best estimated 1RM and
+          how it moves over the last 6 months.
+        </p>
       )}
       {data.myLifts.length > 0 && (
         <ul className="mt-3 divide-y divide-border">
           {data.myLifts.map((l) => (
-            <li key={l.exerciseId} className="flex items-center gap-3 py-3">
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-medium">{l.name}</p>
-                <p className="text-sm text-muted">
-                  {l.best ? `best ${n1(toUnit(l.best.set.weight))} ${unit} × ${l.best.set.reps} · ${short(l.best.set.on)}` : "not logged yet"}
-                </p>
+            <li key={l.exerciseId} className="py-3">
+              <div className="flex items-center gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium">{l.name}</p>
+                  <p className="text-sm text-muted">
+                    {l.best
+                      ? `best ${n1(toUnit(l.best.set.weight))} ${unit} × ${l.best.set.reps} · ${short(l.best.set.on)}`
+                      : "not logged yet"}
+                  </p>
+                </div>
+                <div className="w-24 shrink-0 text-right">
+                  <p className="font-bold tabular-nums">
+                    {l.best ? n1(toUnit(l.best.e1rm)) : "–"}
+                    {l.best && (
+                      <span className="ml-1 text-xs font-normal text-muted">
+                        {unit}
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-xs tabular-nums text-muted">
+                    {l.recent
+                      ? `last 6 wk ${n1(toUnit(l.recent.e1rm))}`
+                      : "none in 6 wk"}
+                  </p>
+                </div>
               </div>
-              <Sparkline
-                values={l.weekly.map((w) => (w.e1rm == null ? null : toUnit(w.e1rm)))}
-                label={`${l.name}, best estimated 1RM per week: ${l.weekly.filter((w) => w.e1rm != null).map((w) => `${short(w.monday)} ${n1(toUnit(w.e1rm as number))} ${unit}`).join(", ") || "no sets yet"}`}
+              <LiftChart
+                name={l.name}
+                weekly={l.weekly}
+                bestBefore={l.bestBefore}
+                toUnit={toUnit}
+                unit={unit}
+                short={short}
               />
-              <div className="w-24 shrink-0 text-right">
-                <p className="font-bold tabular-nums">
-                  {l.best ? n1(toUnit(l.best.e1rm)) : "–"}
-                  {l.best && <span className="ml-1 text-xs font-normal text-muted">{unit}</span>}
-                </p>
-                <p className="text-xs tabular-nums text-muted">{l.recent ? `last 6 wk ${n1(toUnit(l.recent.e1rm))}` : "none in 6 wk"}</p>
-              </div>
             </li>
           ))}
         </ul>
       )}
       {data.liftOptions.length === 0 ? (
-        <p className="mt-2 text-sm text-muted">Log a few workouts with main lifts (squat, hinge, push, pull, Olympic lifts) and they show up here to choose from.</p>
+        <p className="mt-2 text-sm text-muted">
+          Log a few workouts with main lifts (squat, hinge, push, pull, Olympic
+          lifts) and they show up here to choose from.
+        </p>
       ) : (
         <details className="mt-3" open={data.myLifts.length === 0}>
-          <summary className="cursor-pointer text-sm font-medium text-accent">{data.myLifts.length ? "Change lifts" : "Choose lifts"}</summary>
+          <summary className="cursor-pointer text-sm font-medium text-accent">
+            {data.myLifts.length ? "Change lifts" : "Choose lifts"}
+          </summary>
           <form action={saveLifts} className="mt-2 space-y-2">
-            <p className="text-xs text-muted">Up to 8. Main lifts you have logged, most logged first.</p>
+            <p className="text-xs text-muted">
+              Up to 8. Main lifts you have logged, most logged first.
+            </p>
             <div className="grid gap-1.5 sm:grid-cols-2">
               {data.liftOptions.slice(0, 40).map((o) => (
-                <label key={o.exerciseId} className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm">
-                  <input type="checkbox" name="lift" value={o.exerciseId} defaultChecked={data.trackedIds.includes(o.exerciseId)} />
+                <label
+                  key={o.exerciseId}
+                  className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm"
+                >
+                  <input
+                    type="checkbox"
+                    name="lift"
+                    value={o.exerciseId}
+                    defaultChecked={data.trackedIds.includes(o.exerciseId)}
+                  />
                   <span className="min-w-0 flex-1 truncate">{o.name}</span>
                   <span className="text-xs text-muted">{o.sets} sets</span>
                 </label>
               ))}
             </div>
-            <ActionButton pendingLabel="Saving…" className="rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-accent-text">
+            <ActionButton
+              pendingLabel="Saving…"
+              className="rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-accent-text"
+            >
               Save
             </ActionButton>
           </form>
         </details>
       )}
-      <p className="mt-2 text-xs text-muted">Estimated 1RM from your best set (Epley); a single counts as itself. The line is the best per week over 6 months.</p>
+      <p className="mt-2 text-xs text-muted">
+        Estimated 1RM from your best set (Epley); a single counts as itself.
+        Dots: best of each week. Line: best so far, it steps up with every new
+        best and never drops for a light week.
+      </p>
     </Card>
   );
 
   return (
     <div className="space-y-5">
+      {bodyweightCard}
+
       {myLifts}
 
       {data.block && lifts.length > 0 && (
         <Card>
           <div className="flex items-baseline justify-between gap-3">
             <h2 className="font-semibold">Main lifts this block</h2>
-            <p className="text-sm text-muted">since {short(data.block.start)}</p>
+            <p className="text-sm text-muted">
+              since {short(data.block.start)}
+            </p>
           </div>
-          <p className="mt-1 text-sm text-muted">Best estimated max per lift, compared with before the block. The line shows each week of the block.</p>
+          <p className="mt-1 text-sm text-muted">
+            Best estimated max per lift, compared with before the block. The
+            line shows each week of the block.
+          </p>
           <ul className="mt-3 divide-y divide-border">
             {lifts.map((l) => {
-              const diff = l.blockBest != null && l.before != null ? l.blockBest - l.before : null;
-              const pct = diff != null && l.before ? (diff / l.before) * 100 : null;
+              const diff =
+                l.blockBest != null && l.before != null
+                  ? l.blockBest - l.before
+                  : null;
+              const pct =
+                diff != null && l.before ? (diff / l.before) * 100 : null;
               return (
                 <li key={l.exerciseId} className="py-3">
                   <p className="font-medium">
@@ -273,24 +447,41 @@ export function ProgressView({
                         : "not logged yet this block"}
                     </p>
                     <Sparkline
-                      values={l.weekly.map((w) => (w.e1rm == null ? null : toUnit(w.e1rm)))}
+                      values={l.weekly.map((w) =>
+                        w.e1rm == null ? null : toUnit(w.e1rm),
+                      )}
                       label={`${l.name}, best estimated max per week: ${l.weekly.map((w) => `${short(w.monday)} ${w.e1rm == null ? "no sets" : n1(toUnit(w.e1rm)) + " " + unit}`).join(", ")}`}
                     />
                     <div className="w-24 shrink-0 text-right">
                       <p className="font-bold tabular-nums">
                         {l.blockBest == null ? "–" : n1(toUnit(l.blockBest))}
-                        {l.blockBest != null && <span className="ml-1 text-xs font-normal text-muted">{unit}</span>}
+                        {l.blockBest != null && (
+                          <span className="ml-1 text-xs font-normal text-muted">
+                            {unit}
+                          </span>
+                        )}
                       </p>
-                      <p className={`text-xs tabular-nums ${diff == null ? "text-muted" : diff > 0 ? "text-ok" : diff < 0 ? "text-accent" : "text-muted"}`}>
-                        {diff == null ? (l.blockBest == null ? "" : "first block") : `${signed(toUnit(diff))} (${signed(pct ?? 0, 0)}%)`}
+                      <p
+                        className={`text-xs tabular-nums ${diff == null ? "text-muted" : diff > 0 ? "text-ok" : diff < 0 ? "text-accent" : "text-muted"}`}
+                      >
+                        {diff == null
+                          ? l.blockBest == null
+                            ? ""
+                            : "first block"
+                          : `${signed(toUnit(diff))} (${signed(pct ?? 0, 0)}%)`}
                       </p>
                     </div>
                   </div>
                   {l.repBests.length > 0 && (
                     <p className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted">
                       {l.repBests.map((r) => (
-                        <span key={r.reps} className={r.inBlock ? "text-text" : ""} title={`Heaviest ${r.reps === 10 ? "10+" : r.reps}-rep set: ${short(r.on)}${r.inBlock ? ", this block" : ""}`}>
-                          {r.reps === 10 ? "10+" : r.reps} RM {n1(toUnit(r.weight))}
+                        <span
+                          key={r.reps}
+                          className={r.inBlock ? "text-text" : ""}
+                          title={`Heaviest ${r.reps === 10 ? "10+" : r.reps}-rep set: ${short(r.on)}${r.inBlock ? ", this block" : ""}`}
+                        >
+                          {r.reps === 10 ? "10+" : r.reps} RM{" "}
+                          {n1(toUnit(r.weight))}
                           {r.inBlock ? " ★" : ""}
                         </span>
                       ))}
@@ -301,13 +492,15 @@ export function ProgressView({
             })}
           </ul>
           <p className="mt-2 text-xs text-muted">
-            Estimated max from your best set (Epley). RM is the heaviest weight lifted for that many reps, all time; ★ means it was set this block. A PR is a higher estimated max or the heaviest weight ever.
-            {blockWeeks > 0 ? ` Line: ${blockWeeks} week${blockWeeks === 1 ? "" : "s"}.` : ""}
+            Estimated max from your best set (Epley). RM is the heaviest weight
+            lifted for that many reps, all time; ★ means it was set this block.
+            A PR is a higher estimated max or the heaviest weight ever.
+            {blockWeeks > 0
+              ? ` Line: ${blockWeeks} week${blockWeeks === 1 ? "" : "s"}.`
+              : ""}
           </p>
         </Card>
       )}
-
-      {bodyweightCard}
 
       <Card>
         <div className="flex items-baseline justify-between gap-3">
@@ -317,27 +510,41 @@ export function ProgressView({
           </p>
         </div>
         <p className="mt-3 text-3xl font-bold tabular-nums">
-          {n0(toUnit(thisWeek.tonnage))} <span className="text-base font-normal text-muted">{unit} this week</span>
+          {n0(toUnit(thisWeek.tonnage))}{" "}
+          <span className="text-base font-normal text-muted">
+            {unit} this week
+          </span>
         </p>
         <p className="text-sm text-muted">
-          {thisWeek.sessions} session{thisWeek.sessions === 1 ? "" : "s"} · last week {n0(toUnit(lastWeek.tonnage))} {unit} in {lastWeek.sessions}
-          {data.avgMinutes != null ? ` · average workout ${data.avgMinutes} min` : ""}
+          {thisWeek.sessions} session{thisWeek.sessions === 1 ? "" : "s"} · last
+          week {n0(toUnit(lastWeek.tonnage))} {unit} in {lastWeek.sessions}
+          {data.avgMinutes != null
+            ? ` · average workout ${data.avgMinutes} min`
+            : ""}
         </p>
 
         {/* One series, so no legend: the title names it. Every bar has a tooltip and the table below has the numbers. */}
-        <div className="mt-4 flex h-36 items-end gap-1.5" role="img" aria-label={`Weekly volume, ${data.weeks.map((w) => `${short(w.monday)}: ${n0(toUnit(w.tonnage))} ${unit}`).join(", ")}`}>
+        <div
+          className="mt-4 flex h-36 items-end gap-1.5"
+          role="img"
+          aria-label={`Weekly volume, ${data.weeks.map((w) => `${short(w.monday)}: ${n0(toUnit(w.tonnage))} ${unit}`).join(", ")}`}
+        >
           {data.weeks.map((w, i) => {
             const h = w.tonnage > 0 ? Math.max(3, (w.tonnage / max) * 100) : 0;
             const current = i === data.weeks.length - 1;
             return (
-              <div key={w.monday} className="group relative flex h-full flex-1 flex-col justify-end">
+              <div
+                key={w.monday}
+                className="group relative flex h-full flex-1 flex-col justify-end"
+              >
                 <div
                   className={`w-full rounded-t-[4px] ${current ? "bg-accent" : "bg-accent/45"} transition-opacity group-hover:opacity-80`}
                   style={{ height: `${h}%` }}
                 />
                 {w.tonnage === 0 && <div className="h-px w-full bg-border" />}
                 <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-surface-2 px-2 py-1 text-xs shadow-lg group-hover:block">
-                  Week of {short(w.monday)}: {n0(toUnit(w.tonnage))} {unit}, {w.sessions} session{w.sessions === 1 ? "" : "s"}
+                  Week of {short(w.monday)}: {n0(toUnit(w.tonnage))} {unit},{" "}
+                  {w.sessions} session{w.sessions === 1 ? "" : "s"}
                 </span>
               </div>
             );
@@ -345,8 +552,13 @@ export function ProgressView({
         </div>
         <div className="mt-1.5 flex gap-1.5 text-[10px] text-muted">
           {data.weeks.map((w, i) => (
-            <span key={w.monday} className="flex-1 whitespace-nowrap text-center">
-              {i % 2 === data.weeks.length % 2 || i === data.weeks.length - 1 ? short(w.monday) : ""}
+            <span
+              key={w.monday}
+              className="flex-1 whitespace-nowrap text-center"
+            >
+              {i % 2 === data.weeks.length % 2 || i === data.weeks.length - 1
+                ? short(w.monday)
+                : ""}
             </span>
           ))}
         </div>
@@ -376,10 +588,15 @@ export function ProgressView({
       {data.prs.length > 0 && (
         <Card>
           <h2 className="font-semibold">Recent personal records</h2>
-          <p className="mt-1 text-sm text-muted">Each lift&apos;s latest jump in estimated max.</p>
+          <p className="mt-1 text-sm text-muted">
+            Each lift&apos;s latest jump in estimated max.
+          </p>
           <ul className="mt-3 divide-y divide-border">
             {data.prs.map((p) => (
-              <li key={p.exerciseId} className="flex items-center justify-between gap-3 py-2.5">
+              <li
+                key={p.exerciseId}
+                className="flex items-center justify-between gap-3 py-2.5"
+              >
                 <span className="min-w-0">
                   <span className="block truncate font-medium">{p.name}</span>
                   <span className="block text-sm text-muted">
@@ -387,7 +604,9 @@ export function ProgressView({
                   </span>
                 </span>
                 <span className="shrink-0 text-right">
-                  <span className="block font-bold tabular-nums">{n1(toUnit(p.e1rm))}</span>
+                  <span className="block font-bold tabular-nums">
+                    {n1(toUnit(p.e1rm))}
+                  </span>
                   <span className="block text-xs text-muted">est. max</span>
                 </span>
               </li>
@@ -401,7 +620,10 @@ export function ProgressView({
           <h2 className="font-semibold">Working maxes</h2>
           <ul className="mt-3 divide-y divide-border">
             {data.maxes.map((m) => (
-              <li key={m.name} className="flex items-center justify-between py-2.5">
+              <li
+                key={m.name}
+                className="flex items-center justify-between py-2.5"
+              >
                 <span>
                   <span className="block font-medium">{m.name}</span>
                   <span className="block text-sm text-muted">
@@ -409,7 +631,8 @@ export function ProgressView({
                   </span>
                 </span>
                 <span className="font-bold tabular-nums">
-                  {n1(toUnit(m.value))} <span className="text-sm font-normal text-muted">{unit}</span>
+                  {n1(toUnit(m.value))}{" "}
+                  <span className="text-sm font-normal text-muted">{unit}</span>
                 </span>
               </li>
             ))}
@@ -422,25 +645,44 @@ export function ProgressView({
           <h2 className="font-semibold">Speed &amp; power</h2>
           <ul className="mt-3 divide-y divide-border">
             {data.field.map((f) => {
-              const val = (v: number) => (f.unit === "kg" ? `${n1(toUnit(v))} ${unit}` : `${n1(v)} ${f.unit}`);
+              const val = (v: number) =>
+                f.unit === "kg"
+                  ? `${n1(toUnit(v))} ${unit}`
+                  : `${n1(v)} ${f.unit}`;
               return (
-                <li key={f.key} className="flex items-center justify-between gap-3 py-2.5">
+                <li
+                  key={f.key}
+                  className="flex items-center justify-between gap-3 py-2.5"
+                >
                   <span className="min-w-0">
                     <span className="block truncate font-medium">
                       {f.name}
-                      {f.distance != null && <span className="text-muted"> · {n1(f.distance)} m</span>}
+                      {f.distance != null && (
+                        <span className="text-muted">
+                          {" "}
+                          · {n1(f.distance)} m
+                        </span>
+                      )}
                     </span>
                     <span className="block text-sm text-muted">
                       best {val(f.bestValue)} · {short(f.bestOn)}
-                      {f.latest !== f.bestValue ? ` · last ${val(f.latest)}` : ""}
+                      {f.latest !== f.bestValue
+                        ? ` · last ${val(f.latest)}`
+                        : ""}
                     </span>
                   </span>
-                  <Sparkline values={f.history} label={`${f.name}: ${f.history.map((v) => val(v)).join(", ")}`} />
+                  <Sparkline
+                    values={f.history}
+                    label={`${f.name}: ${f.history.map((v) => val(v)).join(", ")}`}
+                  />
                 </li>
               );
             })}
           </ul>
-          <p className="mt-2 text-xs text-muted">Sprints are kept per distance; their line is the time, so it goes down as you get faster. Jumps, throws and sleds go up.</p>
+          <p className="mt-2 text-xs text-muted">
+            Sprints are kept per distance; their line is the time, so it goes
+            down as you get faster. Jumps, throws and sleds go up.
+          </p>
         </Card>
       )}
 
@@ -449,33 +691,59 @@ export function ProgressView({
           <h2 className="font-semibold">Test results</h2>
           <ul className="mt-3 divide-y divide-border">
             {data.tests.map((t) => {
-              const c = t.previous != null ? change(t.latest, t.previous, t.test) : null;
-              const tone = c?.tone === "better" ? "text-ok" : c?.tone === "worse" ? "text-accent" : "text-muted";
+              const c =
+                t.previous != null
+                  ? change(t.latest, t.previous, t.test)
+                  : null;
+              const tone =
+                c?.tone === "better"
+                  ? "text-ok"
+                  : c?.tone === "worse"
+                    ? "text-accent"
+                    : "text-muted";
               return (
                 <li key={t.test.id} className="py-2.5">
                   <div className="flex items-center justify-between gap-3">
                     <span className="min-w-0">
-                      <span className="block truncate font-medium">{t.test.name}</span>
+                      <span className="block truncate font-medium">
+                        {t.test.name}
+                      </span>
                       <span className="block text-sm text-muted">
                         {short(t.latestOn)}
-                        {!isNeutral(t.test) && t.history.length > 1 ? ` · best ${fmt(t.best, t.test.decimals)}` : ""}
+                        {!isNeutral(t.test) && t.history.length > 1
+                          ? ` · best ${fmt(t.best, t.test.decimals)}`
+                          : ""}
                       </span>
                     </span>
                     <span className="shrink-0 text-right">
                       <span className="block font-bold tabular-nums">
-                        {fmt(t.latest, t.test.decimals)} <span className="text-sm font-normal text-muted">{t.test.unit}</span>
+                        {fmt(t.latest, t.test.decimals)}{" "}
+                        <span className="text-sm font-normal text-muted">
+                          {t.test.unit}
+                        </span>
                       </span>
                       {c && (
                         <span className={`block text-xs ${tone}`}>
                           {c.text}
-                          {c.tone === "better" ? ", better" : c.tone === "worse" ? ", worse" : c.tone === "same" ? ", same" : ""}
+                          {c.tone === "better"
+                            ? ", better"
+                            : c.tone === "worse"
+                              ? ", worse"
+                              : c.tone === "same"
+                                ? ", same"
+                                : ""}
                         </span>
                       )}
                     </span>
                   </div>
                   {t.history.length > 2 && (
                     <p className="mt-1 text-xs text-muted">
-                      {t.history.map((h) => `${short(h.on)}: ${fmt(h.value, t.test.decimals)}`).join(" · ")}
+                      {t.history
+                        .map(
+                          (h) =>
+                            `${short(h.on)}: ${fmt(h.value, t.test.decimals)}`,
+                        )
+                        .join(" · ")}
                     </p>
                   )}
                 </li>
@@ -493,15 +761,27 @@ export function ProgressView({
           </div>
           <div className="mt-3 grid grid-cols-3 gap-3 text-center">
             <div>
-              <p className="text-2xl font-bold tabular-nums">{data.wellness.avgReadiness == null ? "–" : `${data.wellness.avgReadiness}%`}</p>
+              <p className="text-2xl font-bold tabular-nums">
+                {data.wellness.avgReadiness == null
+                  ? "–"
+                  : `${data.wellness.avgReadiness}%`}
+              </p>
               <p className="text-xs text-muted">avg readiness</p>
             </div>
             <div>
-              <p className="text-2xl font-bold tabular-nums">{data.wellness.avgSleep == null ? "–" : `${data.wellness.avgSleep} h`}</p>
+              <p className="text-2xl font-bold tabular-nums">
+                {data.wellness.avgSleep == null
+                  ? "–"
+                  : `${data.wellness.avgSleep} h`}
+              </p>
               <p className="text-xs text-muted">avg sleep</p>
             </div>
             <div>
-              <p className="text-2xl font-bold tabular-nums">{data.wellness.latestWeight ? n1(toUnit(data.wellness.latestWeight.kg)) : "–"}</p>
+              <p className="text-2xl font-bold tabular-nums">
+                {data.wellness.latestWeight
+                  ? n1(toUnit(data.wellness.latestWeight.kg))
+                  : "–"}
+              </p>
               <p className="text-xs text-muted">
                 {unit} bodyweight
                 {data.wellness.latestWeight && data.wellness.firstWeight
@@ -511,7 +791,9 @@ export function ProgressView({
             </div>
           </div>
           <details className="mt-3 text-sm">
-            <summary className="cursor-pointer text-muted">Show every day</summary>
+            <summary className="cursor-pointer text-muted">
+              Show every day
+            </summary>
             <table className="mt-2 w-full tabular-nums">
               <thead>
                 <tr className="text-left text-xs text-muted">
@@ -527,12 +809,26 @@ export function ProgressView({
                   <tr key={c.day} className="border-t border-border align-top">
                     <td className="py-1">
                       {short(c.day)}
-                      {c.note && <span className="block text-xs text-muted">{c.note}</span>}
+                      {c.note && (
+                        <span className="block text-xs text-muted">
+                          {c.note}
+                        </span>
+                      )}
                     </td>
-                    <td className="py-1 text-right">{c.readiness == null ? "–" : `${c.readiness}%`}</td>
-                    <td className="py-1 text-right">{c.sleep_hours == null ? "–" : `${c.sleep_hours} h`}</td>
-                    <td className="py-1 text-right">{c.soreness == null ? "–" : `${c.soreness}/5`}</td>
-                    <td className="py-1 text-right">{c.bodyweight == null ? "–" : n1(toUnit(Number(c.bodyweight)))}</td>
+                    <td className="py-1 text-right">
+                      {c.readiness == null ? "–" : `${c.readiness}%`}
+                    </td>
+                    <td className="py-1 text-right">
+                      {c.sleep_hours == null ? "–" : `${c.sleep_hours} h`}
+                    </td>
+                    <td className="py-1 text-right">
+                      {c.soreness == null ? "–" : `${c.soreness}/5`}
+                    </td>
+                    <td className="py-1 text-right">
+                      {c.bodyweight == null
+                        ? "–"
+                        : n1(toUnit(Number(c.bodyweight)))}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -541,7 +837,10 @@ export function ProgressView({
         </Card>
       )}
 
-      <Link href={historyHref} className="block text-center text-sm text-muted underline">
+      <Link
+        href={historyHref}
+        className="block text-center text-sm text-muted underline"
+      >
         Workout history
       </Link>
     </div>

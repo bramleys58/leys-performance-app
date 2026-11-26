@@ -176,6 +176,8 @@ export type TrackedLift = {
   recent: { e1rm: number; set: SetPoint } | null;
   /** Best estimated max per week, oldest first, null for weeks without the lift. */
   weekly: { monday: string; e1rm: number | null }[];
+  /** Best estimated max before the first week shown, null when never done before. */
+  bestBefore: number | null;
 };
 
 /** The lifts an athlete follows: all-time best, recent best and a weekly line (half a year by default). */
@@ -188,7 +190,9 @@ export function trackedLifts(ids: string[], names: Map<string, string>, sets: Se
     const mine = sets.filter((s) => s.exerciseId === id && s.weight > 0 && s.reps > 0);
     let best: TrackedLift["best"] = null;
     let recent: TrackedLift["recent"] = null;
+    let bestBefore: number | null = null;
     for (const s of mine) {
+      if (s.on < mondays[0]) bestBefore = Math.max(bestBefore ?? 0, e1(s)) || null;
       const e = e1(s);
       if (!e) continue;
       // Ties go to the earlier date: that is when it was first reached.
@@ -200,7 +204,7 @@ export function trackedLifts(ids: string[], names: Map<string, string>, sets: Se
       const vals = mine.filter((s) => s.on >= monday && s.on <= sunday).map(e1);
       return { monday, e1rm: vals.length ? Math.max(...vals) : null };
     });
-    return { exerciseId: id, name: names.get(id) ?? mine[0]?.name ?? "Lift", best, recent, weekly };
+    return { exerciseId: id, name: names.get(id) ?? mine[0]?.name ?? "Lift", best, recent, weekly, bestBefore };
   });
 }
 

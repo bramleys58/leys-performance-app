@@ -37,7 +37,7 @@ async function CoachHome({ firstName, userId }: { firstName: string; userId: str
     supabase.from("check_ins").select("id", { count: "exact", head: true }).eq("day", day),
     supabase.from("client_packages").select("*").eq("ended", false),
   ]);
-  const { data: inPerson } = await supabase.from("athletes").select("id, full_name, user_id").eq("status", "active").eq("is_in_person", true).eq("tracking_only", false);
+  const { data: inPerson } = await supabase.from("athletes").select("id, full_name, user_id").eq("status", "active").eq("is_in_person", true).eq("tracking_only", false).eq("billing", "package");
   // Packages that need a look: unpaid, almost used up, ending soon.
   const openPkgs = (pkgs.data ?? []) as ClientPackage[];
   const [toReview, videoTodo, coached, blockPrograms, unreadMsgs] = await Promise.all([

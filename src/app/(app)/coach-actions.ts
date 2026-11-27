@@ -91,6 +91,7 @@ export async function updateAthlete(fd: FormData) {
       notes_language: text(fd, "notes_language") === "nl" ? "nl" : "en",
       status: status === "paused" || status === "archived" ? status : "active",
       ...groupFlags(fd),
+      billing: ["peak", "free"].includes(text(fd, "billing") ?? "") ? text(fd, "billing") : "package",
       notes: text(fd, "notes"),
     })
     .eq("id", id);

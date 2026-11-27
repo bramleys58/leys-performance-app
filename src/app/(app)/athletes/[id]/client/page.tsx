@@ -17,13 +17,13 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
   const today = todayISO();
 
   const [{ data: athlete }, { data: pkgData }, { data: logData }] = await Promise.all([
-    supabase.from("athletes").select("id, full_name, is_in_person").eq("id", id).maybeSingle(),
+    supabase.from("athletes").select("id, full_name, is_in_person, billing").eq("id", id).maybeSingle(),
     supabase.from("client_packages").select("*").eq("athlete_id", id).order("start_date", { ascending: false }),
     supabase.from("workout_logs").select("performed_on").eq("athlete_id", id).not("finished_at", "is", null),
   ]);
   if (!athlete) notFound();
   // In-person clients start from the standard PT pack.
-  const std = athlete.is_in_person;
+  const std = athlete.is_in_person && athlete.billing === "package";
   const dates = (logData ?? []).map((l) => l.performed_on as string);
   const packages = ((pkgData ?? []) as ClientPackage[]).map((p) => ({ p, s: packageState(p, dates, today) }));
   const current = packages.filter(({ p, s }) => !p.ended && (s.running || s.alerts.length > 0));
@@ -67,7 +67,8 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
 
       <Card>
         <h2 className="font-semibold">Add a package</h2>
-        {athlete.is_in_person && <p className="mt-1 text-xs text-muted">Filled in with your standard PT pack: 12 sessions for €750 incl. VAT.</p>}
+        {athlete.billing !== "package" && <p className="mt-1 text-sm text-muted">{athlete.billing === "peak" ? "Paid through Peak" : "Unpaid client"}, so no package is needed. Change it under Payment on their profile.</p>}
+        {std && <p className="mt-1 text-xs text-muted">Filled in with your standard PT pack: 12 sessions for €750 incl. VAT.</p>}
         <form action={addPackage.bind(null, id)} className="mt-3 space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <select name="kind" defaultValue="sessions" aria-label="Kind" className={inputClass}>

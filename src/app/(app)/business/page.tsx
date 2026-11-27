@@ -17,7 +17,7 @@ export default async function BusinessPage() {
 
   const [{ data: pkgData }, { data: athleteData }] = await Promise.all([
     supabase.from("client_packages").select("*").order("start_date", { ascending: false }),
-    supabase.from("athletes").select("id, full_name, status, is_in_person, tracking_only").neq("status", "archived").order("full_name"),
+    supabase.from("athletes").select("id, full_name, status, is_in_person, tracking_only, billing").neq("status", "archived").order("full_name"),
   ]);
   const packages = (pkgData ?? []) as ClientPackage[];
   const ids = [...new Set(packages.map((p) => p.athlete_id))];
@@ -27,13 +27,13 @@ export default async function BusinessPage() {
   const datesBy = new Map<string, string[]>();
   for (const l of (logData ?? []) as { athlete_id: string; performed_on: string }[]) datesBy.set(l.athlete_id, [...(datesBy.get(l.athlete_id) ?? []), l.performed_on]);
 
-  const athletes = (athleteData ?? []) as { id: string; full_name: string; status: string; is_in_person: boolean; tracking_only: boolean }[];
+  const athletes = (athleteData ?? []) as { id: string; full_name: string; status: string; is_in_person: boolean; tracking_only: boolean; billing: string }[];
   const nameOf = new Map(athletes.map((a) => [a.id, a.full_name]));
   const rows = packages.map((p) => ({ p, s: packageState(p, datesBy.get(p.athlete_id) ?? [], today) }));
   const attention = rows.filter(({ s }) => s.alerts.length > 0);
   const running = rows.filter(({ s }) => s.running);
   const withPackage = new Set(rows.filter(({ p, s }) => !p.ended && s.running).map(({ p }) => p.athlete_id));
-  const without = athletes.filter((a) => a.status === "active" && !a.tracking_only && !withPackage.has(a.id));
+  const without = athletes.filter((a) => a.status === "active" && !a.tracking_only && a.billing === "package" && !withPackage.has(a.id));
 
   const income = incomeByMonth(packages, today, 12);
   const thisMonth = income[income.length - 1].total;

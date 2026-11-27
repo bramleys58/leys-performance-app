@@ -288,6 +288,13 @@ export default async function AthletePage({ params, searchParams }: PageProps<"/
             <option value="in_person">In-person client</option>
             <option value="logging">Logging only (independent, no check-ins)</option>
           </Select>
+          {!athlete.tracking_only && (
+            <Select label="Payment" name="billing" defaultValue={athlete.billing ?? "package"}>
+              <option value="package">Pays me with packages</option>
+              <option value="peak">Through Peak (no package needed)</option>
+              <option value="free">Unpaid (no package needed)</option>
+            </Select>
+          )}
           <label className="block">
             <span className="mb-1.5 block text-sm text-muted">Private notes</span>
             <textarea name="notes" rows={3} defaultValue={athlete.notes ?? ""} className={inputClass} />

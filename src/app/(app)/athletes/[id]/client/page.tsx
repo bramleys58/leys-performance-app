@@ -17,11 +17,13 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
   const today = todayISO();
 
   const [{ data: athlete }, { data: pkgData }, { data: logData }] = await Promise.all([
-    supabase.from("athletes").select("id, full_name").eq("id", id).maybeSingle(),
+    supabase.from("athletes").select("id, full_name, is_in_person").eq("id", id).maybeSingle(),
     supabase.from("client_packages").select("*").eq("athlete_id", id).order("start_date", { ascending: false }),
     supabase.from("workout_logs").select("performed_on").eq("athlete_id", id).not("finished_at", "is", null),
   ]);
   if (!athlete) notFound();
+  // In-person clients start from the standard PT pack.
+  const std = athlete.is_in_person;
   const dates = (logData ?? []).map((l) => l.performed_on as string);
   const packages = ((pkgData ?? []) as ClientPackage[]).map((p) => ({ p, s: packageState(p, dates, today) }));
   const current = packages.filter(({ p, s }) => !p.ended && (s.running || s.alerts.length > 0));
@@ -65,16 +67,17 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
 
       <Card>
         <h2 className="font-semibold">Add a package</h2>
+        {athlete.is_in_person && <p className="mt-1 text-xs text-muted">Filled in with your standard PT pack: 12 sessions for €750 incl. VAT.</p>}
         <form action={addPackage.bind(null, id)} className="mt-3 space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <select name="kind" defaultValue="sessions" aria-label="Kind" className={inputClass}>
               <option value="sessions">Pack of sessions</option>
               <option value="subscription">Subscription (monthly, online)</option>
             </select>
-            <input name="name" placeholder="Name, e.g. 10 PT sessions" className={inputClass} />
+            <input name="name" placeholder="Name, e.g. 12 PT sessions" defaultValue={std ? "12 PT sessions" : undefined} className={inputClass} />
             <label className="text-xs text-muted">
               Sessions in the pack
-              <input name="sessions_total" inputMode="numeric" placeholder="e.g. 10" className={inputClass} />
+              <input name="sessions_total" inputMode="numeric" placeholder="e.g. 12" defaultValue={std ? 12 : undefined} className={inputClass} />
             </label>
             <label className="text-xs text-muted">
               Already used before the app
@@ -82,7 +85,7 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
             </label>
             <label className="text-xs text-muted">
               Price (€)
-              <input name="price" inputMode="decimal" placeholder="e.g. 450" className={inputClass} />
+              <input name="price" inputMode="decimal" placeholder="e.g. 750" defaultValue={std ? 750 : undefined} className={inputClass} />
             </label>
             <label className="text-xs text-muted">
               Start date

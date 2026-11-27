@@ -5,10 +5,11 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { signOut } from "@/app/login/actions";
 
-export type MenuSection = { title: string; links: { href: string; label: string; icon: string }[] };
+export type MenuSection = { title: string; links: { href: string; label: string; icon: string; badge?: number }[] };
 
 /** Top bar with a ☰ button on the left that slides the menu in from the left. */
 export function AppMenu({ sections, name, role }: { sections: MenuSection[]; name: string; role: string }) {
+  const unread = sections.flatMap((s) => s.links).reduce((n, l) => n + (l.badge ?? 0), 0);
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
@@ -37,8 +38,9 @@ export function AppMenu({ sections, name, role }: { sections: MenuSection[]; nam
             aria-label="Open menu"
             aria-expanded={open}
             aria-controls="app-menu"
-            className="flex h-10 w-10 items-center justify-center rounded-lg text-text active:bg-surface-2"
+            className="relative flex h-10 w-10 items-center justify-center rounded-lg text-text active:bg-surface-2"
           >
+            {unread > 0 && <span aria-label={`${unread} unread`} className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-accent" />}
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
               <path d="M4 7h16M4 12h16M4 17h16" />
             </svg>
@@ -90,7 +92,8 @@ export function AppMenu({ sections, name, role }: { sections: MenuSection[]; nam
                         <span aria-hidden className="w-5 text-center">
                           {l.icon}
                         </span>
-                        {l.label}
+                        <span className="flex-1">{l.label}</span>
+                        {!!l.badge && <span className="rounded-full bg-accent px-2 py-0.5 text-xs font-bold text-accent-text">{l.badge}</span>}
                       </Link>
                     </li>
                   );

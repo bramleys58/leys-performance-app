@@ -9,6 +9,8 @@ import { getVideoTodo } from "@/lib/video-todo";
 import { blocksToWrite, type BlockProgram } from "@/lib/blocks";
 import { createClient } from "@/lib/supabase/server";
 import { markPaidFromHome, renewFromHome } from "./coach-actions";
+import { PushSetup } from "@/components/push-setup";
+import { unreadCount } from "@/lib/chat";
 
 export default async function HomePage({ searchParams }: PageProps<"/">) {
   const sp = await searchParams;
@@ -38,12 +40,13 @@ async function CoachHome({ firstName, userId }: { firstName: string; userId: str
   const { data: inPerson } = await supabase.from("athletes").select("id, full_name, user_id").eq("status", "active").eq("is_in_person", true).eq("tracking_only", false);
   // Packages that need a look: unpaid, almost used up, ending soon.
   const openPkgs = (pkgs.data ?? []) as ClientPackage[];
-  const [toReview, videoTodo, coached, blockPrograms] = await Promise.all([
+  const [toReview, videoTodo, coached, blockPrograms, unreadMsgs] = await Promise.all([
     getWorkoutsToReview(userId),
     getVideoTodo(supabase),
     // Athletes you write programs for: active, not logging-only.
     supabase.from("athletes").select("id, full_name, user_id").eq("status", "active").eq("tracking_only", false),
     supabase.from("programs").select("id, athlete_id, name, status, start_date, created_at, sessions(week)").eq("is_template", false).in("status", ["active", "draft"]),
+    unreadCount("coach", null),
   ]);
   const toWrite = blocksToWrite(
     (coached.data ?? []).filter((a) => a.user_id !== userId), // not your own training
@@ -120,6 +123,18 @@ async function CoachHome({ firstName, userId }: { firstName: string; userId: str
           );
         })}
       </div>
+      <PushSetup dismissable />
+      {unreadMsgs > 0 && (
+        <Link href="/chat" className="flex items-center justify-between rounded-2xl border border-accent bg-surface px-5 py-4">
+          <span>
+            <span className="block font-semibold">
+              {unreadMsgs} unread message{unreadMsgs === 1 ? "" : "s"}
+            </span>
+            <span className="block text-sm text-muted">Opens Messages</span>
+          </span>
+          <span className="text-muted">→</span>
+        </Link>
+      )}
       {toReview.length > 0 && (
         <Link href="/review" className="flex items-center justify-between rounded-2xl border border-accent bg-surface px-5 py-4">
           <span className="min-w-0">

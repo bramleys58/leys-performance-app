@@ -11,6 +11,8 @@ import { WeeklyPrompt } from "@/components/weekly-prompt";
 import { WEEKDAYS, isoWeekday, todayISO, weekFilter, weekRange } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/server";
 import { WorkoutSaved } from "@/components/workout-saved";
+import { PushSetup } from "@/components/push-setup";
+import { unreadCount } from "@/lib/chat";
 
 export function today() {
   return new Intl.DateTimeFormat("en-GB", {
@@ -178,7 +180,17 @@ export async function AthleteHome({ firstName, welcome = false, isCoach = false,
   return (
     <div className="space-y-6">
       {heading}
-      <WorkoutSaved logId={done} />
+      <WorkoutSaved logId={done} message={!isCoach} />
+      {!isCoach && (await unreadCount("athlete", athlete.id)) > 0 && (
+        <Link href="/chat" className="flex items-center justify-between rounded-2xl border border-accent bg-accent/10 px-4 py-3">
+          <span>
+            <span className="block font-semibold">New message from your coach</span>
+            <span className="block text-sm text-muted">Tap to read</span>
+          </span>
+          <span className="text-accent">→</span>
+        </Link>
+      )}
+      {!isCoach && <PushSetup dismissable />}
       {needsPassword && (
         <Link href="/account" className="flex items-center justify-between rounded-2xl border border-accent bg-accent/10 px-4 py-3">
           <span>

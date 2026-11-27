@@ -88,6 +88,10 @@ export default async function AthletePage({ params, searchParams }: PageProps<"/
       </Card>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Link href={`/chat/${athlete.id}`} className="rounded-2xl border border-border bg-surface px-4 py-4">
+          <span className="block font-semibold">Chat</span>
+          <span className="block text-sm text-muted">Messages and videos</span>
+        </Link>
         <Link href={`/athletes/${athlete.id}/calendar`} className="rounded-2xl border border-border bg-surface px-4 py-4">
           <span className="block font-semibold">Calendar</span>
           <span className="block text-sm text-muted">Planned and done</span>

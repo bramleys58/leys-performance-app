@@ -114,3 +114,42 @@ self.addEventListener("fetch", (event) => {
   // Full page loads only. In-app data requests are left alone.
   if (request.mode === "navigate" && !NEVER.some((r) => r.test(url.pathname))) event.respondWith(page(request));
 });
+
+// Phone notifications for new chat messages.
+self.addEventListener("push", (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = { body: event.data ? event.data.text() : "" };
+  }
+  const title = data.title || "Leys Performance";
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body: data.body || "New message",
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      tag: data.tag || "chat",
+      renotify: true,
+      data: { url: data.url || "/chat" },
+    }),
+  );
+});
+
+// Tapping a notification opens the chat, in the app window if one is open.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = new URL(event.notification.data?.url || "/chat", self.location.origin).href;
+  event.waitUntil(
+    (async () => {
+      const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      for (const w of wins) {
+        if (new URL(w.url).origin === self.location.origin) {
+          await w.focus();
+          if ("navigate" in w) return w.navigate(target);
+        }
+      }
+      return self.clients.openWindow(target);
+    })(),
+  );
+});

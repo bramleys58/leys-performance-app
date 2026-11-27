@@ -1,10 +1,12 @@
 import { AppMenu, type MenuSection } from "@/components/app-menu";
 import { requireUser } from "@/lib/auth";
 import { getMyAthlete } from "@/lib/athlete";
+import { unreadCount } from "@/lib/chat";
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const user = await requireUser();
   const athlete = await getMyAthlete();
+  const unread = await unreadCount(user.role, athlete?.id ?? null);
 
   const sections: MenuSection[] =
     user.role === "coach"
@@ -14,6 +16,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
             links: [
               { href: "/", label: "Home", icon: "🏠" },
               { href: "/athletes", label: "Athletes", icon: "👥" },
+              { href: "/chat", label: "Messages", icon: "💬", badge: unread },
               { href: "/follow-up", label: "Follow-up", icon: "📋" },
               { href: "/review", label: "Workouts to review", icon: "✅" },
               { href: "/testing", label: "Testing", icon: "⏱️" },
@@ -51,6 +54,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
               { href: "/calendar", label: "Calendar", icon: "📅" },
               { href: "/progress", label: "My progress", icon: "📈" },
               { href: "/history", label: "Workout history", icon: "🕘" },
+              { href: "/chat", label: "Chat with coach", icon: "💬", badge: unread },
               { href: "/resources", label: "Resources", icon: "📎" },
             ],
           },

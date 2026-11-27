@@ -793,10 +793,21 @@ export async function addPackage(athleteId: string, fd: FormData) {
   go(back + (error ? "?error=" + encodeURIComponent("Could not save the package.") : "?saved=1"));
 }
 
-export async function markPackagePaid(athleteId: string, packageId: string, paid: boolean) {
+async function setPaid(athleteId: string, packageId: string, paid: boolean) {
   const db = await coachDb();
   await db.from("client_packages").update({ paid_on: paid ? new Date().toISOString().slice(0, 10) : null }).eq("id", packageId).eq("athlete_id", athleteId);
+}
+
+export async function markPackagePaid(athleteId: string, packageId: string, paid: boolean) {
+  await setPaid(athleteId, packageId, paid);
   go(`/athletes/${athleteId}/client?saved=1`);
+}
+
+/** One tap from the coach home: paid today, back to home. */
+export async function markPaidFromHome(athleteId: string, packageId: string) {
+  await setPaid(athleteId, packageId, true);
+  revalidatePath("/business");
+  go("/");
 }
 
 export async function endPackage(athleteId: string, packageId: string, ended: boolean) {
@@ -807,6 +818,18 @@ export async function endPackage(athleteId: string, packageId: string, ended: bo
 
 /** Starts the same package again from today (or the old end date), for a renewal. */
 export async function renewPackage(athleteId: string, packageId: string) {
+  const error = await renew(athleteId, packageId);
+  go(`/athletes/${athleteId}/client` + (error ? "?error=" + encodeURIComponent("Could not renew.") : "?saved=1"));
+}
+
+/** Renew from the coach home, back to home. */
+export async function renewFromHome(athleteId: string, packageId: string) {
+  await renew(athleteId, packageId);
+  revalidatePath(`/athletes/${athleteId}/client`);
+  go("/");
+}
+
+async function renew(athleteId: string, packageId: string) {
   const db = await coachDb();
   const { data: p } = await db.from("client_packages").select("*").eq("id", packageId).eq("athlete_id", athleteId).maybeSingle();
   if (!p) go(`/athletes/${athleteId}/client`);
@@ -829,7 +852,7 @@ export async function renewPackage(athleteId: string, packageId: string) {
     end_date: end,
     notes: p.notes,
   });
-  go(`/athletes/${athleteId}/client` + (error ? "?error=" + encodeURIComponent("Could not renew.") : "?saved=1"));
+  return error;
 }
 
 export async function deletePackage(athleteId: string, packageId: string) {

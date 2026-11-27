@@ -963,3 +963,57 @@ export async function deleteResource(id: string) {
   if (r?.file_path) await adminClient()?.storage.from(RESOURCE_BUCKET).remove([r.file_path]);
   go("/resources?saved=1");
 }
+
+// ----------------------------------------------------------------- finances
+
+/** Adds income or a cost, once or repeating. The amount may be entered incl. VAT. */
+export async function addFinanceEntry(fd: FormData) {
+  const db = await coachDb();
+  const back = "/finances";
+  const kind = text(fd, "kind") === "cost" ? "cost" : "income";
+  const stream = text(fd, "stream")?.slice(0, 60);
+  const raw = Number((text(fd, "amount") ?? "").replace(/[€\s]/g, "").replace(",", "."));
+  const salary = kind === "income" && fd.get("salary") === "on";
+  const rate = salary ? 0 : [0, 6, 12, 21].includes(Number(text(fd, "vat_rate"))) ? Number(text(fd, "vat_rate")) : 21;
+  if (!stream) go(back + "?error=" + encodeURIComponent("Fill in the stream or category."));
+  if (!(raw > 0)) go(back + "?error=" + encodeURIComponent("Fill in an amount."));
+  // Stored excl. VAT.
+  const amount = Math.round((text(fd, "incl_vat") === "no" || !rate ? raw : raw / (1 + rate / 100)) * 100) / 100;
+  const repeat = ["monthly", "quarterly", "yearly"].includes(text(fd, "repeat") ?? "") ? text(fd, "repeat") : "none";
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(text(fd, "date") ?? "") ? text(fd, "date") : new Date().toISOString().slice(0, 10);
+  const { error } = await db.from("finance_entries").insert({ kind, stream, description: text(fd, "description")?.slice(0, 200) ?? null, amount, vat_rate: rate, date, repeat, salary });
+  if (error) go(back + "?error=" + encodeURIComponent("Could not save it."));
+  go(back + "?saved=1");
+}
+
+/** Stops a repeating entry: it counts up to today and not after. */
+export async function stopFinanceEntry(id: string) {
+  const db = await coachDb();
+  await db.from("finance_entries").update({ end_date: new Date().toISOString().slice(0, 10) }).eq("id", id).neq("repeat", "none");
+  go("/finances?saved=1");
+}
+
+export async function deleteFinanceEntry(id: string) {
+  const db = await coachDb();
+  await db.from("finance_entries").delete().eq("id", id);
+  go("/finances?saved=1");
+}
+
+export async function saveFinanceSettings(fd: FormData) {
+  const db = await coachDb();
+  const num = (k: string) => {
+    const v = Number((text(fd, k) ?? "").replace(/[€\s.]/g, "").replace(",", "."));
+    return Number.isFinite(v) && v > 0 ? v : null;
+  };
+  const pct = Number((text(fd, "set_aside_pct") ?? "40").replace(",", "."));
+  const { error } = await db.from("finance_settings").upsert({
+    id: 1,
+    year_target: num("year_target"),
+    set_aside_pct: Number.isFinite(pct) ? Math.min(80, Math.max(0, pct)) : 40,
+    package_prices_incl_vat: text(fd, "package_prices_incl_vat") !== "no",
+    package_vat_rate: [0, 6, 12, 21].includes(Number(text(fd, "package_vat_rate"))) ? Number(text(fd, "package_vat_rate")) : 21,
+  });
+  if (error) go("/finances?error=" + encodeURIComponent("Could not save the settings."));
+  go("/finances?saved=1");
+}
+

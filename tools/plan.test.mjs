@@ -279,3 +279,29 @@ console.log("weekly.ts: all checks passed");
   assert.equal(isMainLift("Back Squat", "Squat", false), false);
   console.log("main-lift.ts: all checks passed");
 }
+
+{
+  const F = await import("../src/lib/finance.ts");
+  // repeats
+  assert.deepEqual(F.occurrences({ date: "2026-01-31", repeat: "monthly", end_date: null }, "2026-01-01", "2026-04-30"), ["2026-01-31", "2026-02-28", "2026-03-31", "2026-04-30"]);
+  assert.deepEqual(F.occurrences({ date: "2026-02-15", repeat: "quarterly", end_date: "2026-09-01" }, "2026-01-01", "2026-12-31"), ["2026-02-15", "2026-05-15", "2026-08-15"]);
+  assert.deepEqual(F.occurrences({ date: "2025-03-01", repeat: "yearly", end_date: null }, "2026-01-01", "2026-12-31"), ["2026-03-01"]);
+  assert.deepEqual(F.occurrences({ date: "2026-06-10", repeat: "none", end_date: null }, "2026-01-01", "2026-06-09"), []);
+  const s = { year_target: 50000, set_aside_pct: 40, package_prices_incl_vat: true, package_vat_rate: 21 };
+  const entries = [
+    { id: "1", kind: "income", stream: "Basic-Fit", description: null, amount: 1200, vat_rate: 0, date: "2026-01-25", repeat: "monthly", end_date: null, salary: true },
+    { id: "2", kind: "income", stream: "Tribes", description: null, amount: 500, vat_rate: 21, date: "2026-01-01", repeat: "monthly", end_date: null, salary: false },
+    { id: "3", kind: "cost", stream: "Software", description: "Vercel", amount: 20, vat_rate: 21, date: "2026-01-05", repeat: "monthly", end_date: null, salary: false },
+    { id: "4", kind: "cost", stream: "Equipment", description: "Bands", amount: 100, vat_rate: 21, date: "2026-02-10", repeat: "none", end_date: null, salary: false },
+  ];
+  const items = [...F.entryItems(entries, "2026-01-01", "2026-03-31"), ...F.packageItems([{ price: 121, paid_on: "2026-02-03", stream: "Online coaching" }], s)];
+  const rows = F.byMonth(items, ["2026-01", "2026-02", "2026-03"]);
+  assert.deepEqual(rows.map((r) => [r.income, r.salary, r.costs, r.profit]), [[500, 1200, 20, 480], [600, 1200, 120, 480], [500, 1200, 20, 480]]);
+  assert.equal(rows[1].byStream["Online coaching"], 100); // 121 incl. 21% VAT
+  const q1 = F.vatForQuarter(items, 2026, 1);
+  assert.deepEqual([q1.charged, q1.paid, q1.due], [336, 33.6, 302.4]); // 3x105 + 21 charged; 3x4.2 + 21 paid
+  const y = F.yearSummary(rows, s);
+  assert.deepEqual([y.income, y.costs, y.profit, y.setAside, y.targetPct], [1600, 160, 1440, 576, 3]);
+  assert.equal(F.quarterOf("2026-11-27"), 4);
+  console.log("finance.ts: all checks passed");
+}

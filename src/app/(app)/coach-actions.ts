@@ -688,10 +688,15 @@ export async function inviteAthlete(athleteId: string) {
     const { data: existing } = await admin.auth.admin.getUserById(athlete.user_id);
     if (existing.user?.email_confirmed_at || existing.user?.last_sign_in_at) go(back + "?error=" + encodeURIComponent("This athlete already has a login. If they forgot the password, they can reset it on the login page."));
   }
-  const { error } = await admin.auth.admin.inviteUserByEmail(athlete.email, {
+  const { data: invited, error } = await admin.auth.admin.inviteUserByEmail(athlete.email, {
     redirectTo: siteOrigin(origin) ? `${siteOrigin(origin)}/auth/callback` : undefined,
     data: { full_name: athlete.full_name },
   });
+  // The profile belongs to the login just invited. Matters when the email was corrected after
+  // a first invite: the old, never used login would otherwise stay linked.
+  if (!error && invited.user && invited.user.id !== athlete.user_id) {
+    await db.from("athletes").update({ user_id: invited.user.id }).eq("id", athleteId);
+  }
   if (error) {
     const msg = /already|registered|exists/i.test(error.message)
       ? "That email address already has a login. Save the profile again to link it."
